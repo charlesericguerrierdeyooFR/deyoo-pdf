@@ -1,6 +1,6 @@
-# Deyoo PDF
+# deyoo PDF
 
-Génération et gestion des rapports PDF pour l'application Deyoo.
+Génération et gestion des rapports PDF pour l'application deyoo.
 
 ## Objectif
 
