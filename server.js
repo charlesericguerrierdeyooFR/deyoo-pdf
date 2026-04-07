@@ -6,7 +6,7 @@ app.use(express.json());
 
 app.post("/generate-pdf", (req, res) => {
   const data = req.body;
-  const filePath = "output.pdf";
+  const filePath = `output-${Date.now()}.pdf`;
 
   generatePDF(data, filePath);
 
