@@ -1,33 +1,26 @@
 import fs from "fs";
 import PDFDocument from "pdfkit";
 
-export function generatePDF(data, outputPath) {
-  const doc = new PDFDocument({
-    size: "A4",
-    margins: {
-      top: 50,
-      bottom: 50,
-      left: 50,
-      right: 50
-    }
+export async function generatePDF(data, filePath) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: "A4", margin: 50 });
+    const stream = fs.createWriteStream(filePath);
+
+    doc.pipe(stream);
+
+    // --- TON CONTENU EXISTANT ---
+    doc.fontSize(20).text("deyoo", { align: "center" });
+    doc.moveDown();
+    doc.fontSize(12).text(`Projet : ${data.project || ""}`);
+    doc.text(`Score : ${data.score || ""}`);
+    doc.text(`Verdict : ${data.verdict || ""}`);
+    doc.moveDown();
+    doc.text(data.details || "");
+    // --- FIN CONTENU ---
+
+    doc.end();
+
+    stream.on("finish", () => resolve(filePath));
+    stream.on("error", (err) => reject(err));
   });
-
-  doc.pipe(fs.createWriteStream(outputPath));
-
-  doc.fontSize(18).text("deyoo analysis report", {
-    align: "center",
-    underline: true
-  });
-
-  doc.moveDown();
-
-  doc.fontSize(12).text(`Project: ${data.project}`);
-  doc.text(`Score: ${data.score}`);
-  doc.text(`Verdict: ${data.verdict}`);
-
-  doc.moveDown();
-  doc.text("Details:");
-  doc.text(data.details);
-
-  doc.end();
 }
