@@ -1,6 +1,5 @@
 import express from "express";
 import { generatePDF } from "./generate_pdf.js";
-import fs from "fs";
 
 const app = express();
 app.use(express.json());
