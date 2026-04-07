@@ -1,0 +1,12 @@
+{
+  "name": "deyoo-pdf",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "generate_pdf.js",
+  "scripts": {
+    "start": "node test.js"
+  },
+  "dependencies": {
+    "pdfkit": "^0.13.0"
+  }
+}
