@@ -54,42 +54,59 @@ export async function generatePDF(data) {
 
     const sections = parseSections(data.details || '');
 
+    // Fix: handle null, "null", undefined, empty string from Bubble
+    const rawProject = data.project;
+    const projectName = (rawProject && rawProject !== 'null' && rawProject !== 'undefined' && rawProject.trim() !== '')
+      ? rawProject
+      : 'Analyse de projet';
+
     // ── HELPERS ────────────────────────────────────────────────
+    function resetX() {
+      doc.x = M;
+    }
+
     function rule(color = COLORS.border, thickness = 0.5) {
       doc.moveTo(M, doc.y).lineTo(M + W, doc.y)
         .lineWidth(thickness).stroke(color);
+      resetX();
     }
 
     function sectionTitle(label) {
       doc.moveDown(1.2);
+      resetX();
       doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.gray)
-        .text(label.toUpperCase(), { characterSpacing: 1.8 });
+        .text(label.toUpperCase(), M, doc.y, { characterSpacing: 1.8, width: W });
       doc.moveDown(0.3);
       rule();
       doc.moveDown(0.6);
+      resetX();
     }
 
     function body(text, opts = {}) {
+      resetX();
       doc.font('Helvetica').fontSize(10.5).fillColor(COLORS.dark)
-        .text(clean(text), { lineGap: 4, ...opts });
+        .text(clean(text), M, doc.y, { lineGap: 4, width: W, ...opts });
+      resetX();
     }
 
     // ── EN-TÊTE ────────────────────────────────────────────────
     doc.font('Helvetica-Bold').fontSize(13).fillColor(COLORS.dark)
       .text('deyoo', M, M, { width: W, align: 'right' });
-
+    resetX();
     doc.moveDown(1.5);
 
     doc.font('Helvetica-Bold').fontSize(20).fillColor(COLORS.dark)
-      .text(data.project || 'Analyse de projet', M, doc.y, { align: 'center', width: W });
-
+      .text(projectName, M, doc.y, { align: 'center', width: W });
+    resetX();
     doc.moveDown(0.4);
+
     doc.font('Helvetica').fontSize(9).fillColor(COLORS.gray)
       .text(
         new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }),
-        { align: 'center' }
+        M, doc.y,
+        { align: 'center', width: W }
       );
-
+    resetX();
     doc.moveDown(1);
     rule(COLORS.dark, 1.5);
 
@@ -108,6 +125,7 @@ export async function generatePDF(data) {
       doc.font('Helvetica').fontSize(10.5).fillColor(COLORS.dark)
         .text(clean(sections['Verdict']), M + 16, vy, { width: W - 16, lineGap: 4 });
       doc.y = vy + vh + 20;
+      resetX();
     }
 
     // ── VARIABLE CLÉ ───────────────────────────────────────────
@@ -117,22 +135,18 @@ export async function generatePDF(data) {
       const vkLines = vk.split('\n');
       const seuilLines = vkLines.filter(l => l.includes('Seuil'));
       const intro = vkLines.filter(l => !l.includes('Seuil') && l.trim()).join(' ');
-
       if (intro) { body(intro); doc.moveDown(0.8); }
-
       if (seuilLines.length) {
         const bw = (W - 12) / 3;
         const by = doc.y;
         const bh = 70;
         const labels = ['SURVIE', 'VIABILITÉ', 'CONFORT'];
-
         seuilLines.slice(0, 3).forEach((line, i) => {
           const txt = clean(line.replace(/\*\*Seuil[^:]*\*\*\s*:?\s*/, ''));
           const parts = txt.split('—');
           const amount = parts[0]?.trim() || '';
           const desc = parts[1]?.trim() || '';
           const bx = M + i * (bw + 6);
-
           doc.rect(bx, by, bw, bh).fill(COLORS.lightGray);
           doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLORS.gray)
             .text(labels[i], bx + 10, by + 10, { width: bw - 20 });
@@ -141,7 +155,9 @@ export async function generatePDF(data) {
           doc.font('Helvetica').fontSize(8).fillColor(COLORS.gray)
             .text(desc, bx + 10, by + 46, { width: bw - 20, lineBreak: false });
         });
+        // IMPORTANT: reset position after boxes to prevent x-drift
         doc.y = by + bh + 16;
+        resetX();
       }
     }
 
@@ -155,10 +171,14 @@ export async function generatePDF(data) {
 
       function flushPilier() {
         if (!title) return;
-        doc.font('Helvetica-Bold').fontSize(10.5).fillColor(COLORS.dark).text(title);
+        resetX();
+        doc.font('Helvetica-Bold').fontSize(10.5).fillColor(COLORS.dark)
+          .text(title, M, doc.y, { width: W });
+        resetX();
         doc.font('Helvetica').fontSize(10.5).fillColor(COLORS.dark)
-          .text(clean(content.join(' ')), { lineGap: 3 });
+          .text(clean(content.join(' ')), M, doc.y, { lineGap: 3, width: W });
         doc.moveDown(0.7);
+        resetX();
       }
 
       for (const line of lines) {
@@ -188,8 +208,10 @@ export async function generatePDF(data) {
     // ── CONCLUSION ─────────────────────────────────────────────
     if (sections['Conclusion']) {
       sectionTitle('Conclusion');
+      resetX();
       doc.font('Helvetica-Oblique').fontSize(10.5).fillColor(COLORS.dark)
-        .text(clean(sections['Conclusion']), { lineGap: 4 });
+        .text(clean(sections['Conclusion']), M, doc.y, { lineGap: 4, width: W });
+      resetX();
     }
 
     // ── ACTIONS ────────────────────────────────────────────────
@@ -201,11 +223,13 @@ export async function generatePDF(data) {
         const bt = getBoldTitle(line);
         if (bt) {
           const rest = clean(line.replace(/^\*\*(.*?)\*\*\s*:?\s*/, ''));
+          resetX();
           doc.font('Helvetica-Bold').fontSize(10.5).fillColor(COLORS.dark)
-            .text(`${n}. ${bt}`);
+            .text(`${n}. ${bt}`, M, doc.y, { width: W });
           if (rest && rest !== bt) {
+            resetX();
             doc.font('Helvetica').fontSize(10).fillColor(COLORS.gray)
-              .text(rest, { lineGap: 2 });
+              .text(rest, M, doc.y, { lineGap: 2, width: W });
           }
           doc.moveDown(0.5);
           n++;
@@ -217,15 +241,17 @@ export async function generatePDF(data) {
     }
 
     // ── FOOTER sur chaque page ─────────────────────────────────
-    const range = doc.bufferedPageRange();
-    for (let i = 0; i < range.count; i++) {
-      doc.switchToPage(range.start + i);
+    const totalPages = doc.bufferedPageRange().count;
+    for (let i = 0; i < totalPages; i++) {
+      doc.switchToPage(i);
       doc.font('Helvetica').fontSize(8).fillColor(COLORS.gray)
         .text(
-          `deyoo  ·  Analyse confidentielle  ·  Page ${i + 1} / ${range.count}`,
-          M, doc.page.height - 36,
-          { width: W, align: 'center' }
+          `deyoo  ·  Analyse confidentielle  ·  Page ${i + 1} / ${totalPages}`,
+          M, doc.page.height - 40,
+          { width: W, align: 'center', lineBreak: false }
         );
+      // IMPORTANT: reset doc.y after footer to prevent blank page creation
+      doc.y = M;
     }
 
     doc.end();
