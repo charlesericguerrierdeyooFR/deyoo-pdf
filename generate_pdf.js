@@ -1,26 +1,233 @@
-import fs from "fs";
-import PDFDocument from "pdfkit";
+import PDFDocument from 'pdfkit';
 
-export async function generatePDF(data, filePath) {
+const COLORS = {
+  black:     '#0f0f0f',
+  dark:      '#1c1c1e',
+  gray:      '#6e6e73',
+  lightGray: '#f2f2f7',
+  border:    '#e5e5ea',
+};
+
+function parseSections(text) {
+  const sections = {};
+  const lines = text.split('\n');
+  let current = null;
+  let buffer = [];
+  for (const line of lines) {
+    if (line.startsWith('## ')) {
+      if (current) sections[current] = buffer.join('\n').trim();
+      current = line.replace('## ', '').trim();
+      buffer = [];
+    } else {
+      buffer.push(line);
+    }
+  }
+  if (current) sections[current] = buffer.join('\n').trim();
+  return sections;
+}
+
+function clean(text) {
+  return text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1').trim();
+}
+
+function getBoldTitle(line) {
+  const m = line.match(/^\*\*(.*?)\*\*/);
+  return m ? m[1] : null;
+}
+
+export async function generatePDF(data) {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "A4", margin: 50 });
-    const stream = fs.createWriteStream(filePath);
+    const M = 56;
+    const doc = new PDFDocument({
+      size: 'A4',
+      margins: { top: M, bottom: M, left: M, right: M },
+      autoFirstPage: true,
+      bufferPages: true,
+      info: { Title: 'Analyse deyoo', Author: 'deyoo' },
+    });
 
-    doc.pipe(stream);
+    const W = doc.page.width - M * 2;
+    const buffers = [];
+    doc.on('data', c => buffers.push(c));
+    doc.on('end', () => resolve(Buffer.concat(buffers)));
+    doc.on('error', reject);
 
-    // --- TON CONTENU EXISTANT ---
-    doc.fontSize(20).text("deyoo", { align: "center" });
-    doc.moveDown();
-    doc.fontSize(12).text(`Projet : ${data.project || ""}`);
-    doc.text(`Score : ${data.score || ""}`);
-    doc.text(`Verdict : ${data.verdict || ""}`);
-    doc.moveDown();
-    doc.text(data.details || "");
-    // --- FIN CONTENU ---
+    const sections = parseSections(data.details || '');
+
+    // ── HELPERS ────────────────────────────────────────────────
+    function rule(color = COLORS.border, thickness = 0.5) {
+      doc.moveTo(M, doc.y).lineTo(M + W, doc.y)
+        .lineWidth(thickness).stroke(color);
+    }
+
+    function sectionTitle(label) {
+      doc.moveDown(1.2);
+      doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.gray)
+        .text(label.toUpperCase(), { characterSpacing: 1.8 });
+      doc.moveDown(0.3);
+      rule();
+      doc.moveDown(0.6);
+    }
+
+    function body(text, opts = {}) {
+      doc.font('Helvetica').fontSize(10.5).fillColor(COLORS.dark)
+        .text(clean(text), { lineGap: 4, ...opts });
+    }
+
+    // ── EN-TÊTE ────────────────────────────────────────────────
+    doc.font('Helvetica-Bold').fontSize(13).fillColor(COLORS.dark)
+      .text('deyoo', M, M, { width: W, align: 'right' });
+
+    doc.moveDown(1.5);
+
+    doc.font('Helvetica-Bold').fontSize(20).fillColor(COLORS.dark)
+      .text(data.project || 'Analyse de projet', M, doc.y, { align: 'center', width: W });
+
+    doc.moveDown(0.4);
+    doc.font('Helvetica').fontSize(9).fillColor(COLORS.gray)
+      .text(
+        new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }),
+        { align: 'center' }
+      );
+
+    doc.moveDown(1);
+    rule(COLORS.dark, 1.5);
+
+    // ── INTRODUCTION ───────────────────────────────────────────
+    if (sections['Introduction']) {
+      sectionTitle('Introduction');
+      body(sections['Introduction']);
+    }
+
+    // ── VERDICT ────────────────────────────────────────────────
+    if (sections['Verdict']) {
+      sectionTitle('Verdict');
+      const vy = doc.y;
+      const vh = doc.heightOfString(clean(sections['Verdict']), { width: W - 16 });
+      doc.rect(M, vy, 3, vh + 8).fill(COLORS.dark);
+      doc.font('Helvetica').fontSize(10.5).fillColor(COLORS.dark)
+        .text(clean(sections['Verdict']), M + 16, vy, { width: W - 16, lineGap: 4 });
+      doc.y = vy + vh + 20;
+    }
+
+    // ── VARIABLE CLÉ ───────────────────────────────────────────
+    const vk = sections['Variable clé et seuils'] || sections['Variable clé'];
+    if (vk) {
+      sectionTitle('Variable clé et seuils');
+      const vkLines = vk.split('\n');
+      const seuilLines = vkLines.filter(l => l.includes('Seuil'));
+      const intro = vkLines.filter(l => !l.includes('Seuil') && l.trim()).join(' ');
+
+      if (intro) { body(intro); doc.moveDown(0.8); }
+
+      if (seuilLines.length) {
+        const bw = (W - 12) / 3;
+        const by = doc.y;
+        const bh = 70;
+        const labels = ['SURVIE', 'VIABILITÉ', 'CONFORT'];
+
+        seuilLines.slice(0, 3).forEach((line, i) => {
+          const txt = clean(line.replace(/\*\*Seuil[^:]*\*\*\s*:?\s*/, ''));
+          const parts = txt.split('—');
+          const amount = parts[0]?.trim() || '';
+          const desc = parts[1]?.trim() || '';
+          const bx = M + i * (bw + 6);
+
+          doc.rect(bx, by, bw, bh).fill(COLORS.lightGray);
+          doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLORS.gray)
+            .text(labels[i], bx + 10, by + 10, { width: bw - 20 });
+          doc.font('Helvetica-Bold').fontSize(14).fillColor(COLORS.dark)
+            .text(amount, bx + 10, by + 26, { width: bw - 20 });
+          doc.font('Helvetica').fontSize(8).fillColor(COLORS.gray)
+            .text(desc, bx + 10, by + 46, { width: bw - 20, lineBreak: false });
+        });
+        doc.y = by + bh + 16;
+      }
+    }
+
+    // ── LES 5 PILIERS ──────────────────────────────────────────
+    const piliers = sections['Les 5 piliers'];
+    if (piliers) {
+      sectionTitle('Les 5 piliers');
+      const lines = piliers.split('\n');
+      let title = null;
+      let content = [];
+
+      function flushPilier() {
+        if (!title) return;
+        doc.font('Helvetica-Bold').fontSize(10.5).fillColor(COLORS.dark).text(title);
+        doc.font('Helvetica').fontSize(10.5).fillColor(COLORS.dark)
+          .text(clean(content.join(' ')), { lineGap: 3 });
+        doc.moveDown(0.7);
+      }
+
+      for (const line of lines) {
+        const bt = getBoldTitle(line);
+        if (bt) {
+          flushPilier();
+          title = bt;
+          const rest = line.replace(/^\*\*(.*?)\*\*\s*/, '').trim();
+          content = rest ? [rest] : [];
+        } else if (line.trim()) {
+          content.push(line.trim());
+        }
+      }
+      flushPilier();
+    }
+
+    // ── ANALYSE ────────────────────────────────────────────────
+    if (sections['Analyse']) {
+      sectionTitle('Analyse');
+      const paras = sections['Analyse'].split(/\n{2,}/).filter(p => p.trim());
+      paras.forEach((p, i) => {
+        body(p);
+        if (i < paras.length - 1) doc.moveDown(0.6);
+      });
+    }
+
+    // ── CONCLUSION ─────────────────────────────────────────────
+    if (sections['Conclusion']) {
+      sectionTitle('Conclusion');
+      doc.font('Helvetica-Oblique').fontSize(10.5).fillColor(COLORS.dark)
+        .text(clean(sections['Conclusion']), { lineGap: 4 });
+    }
+
+    // ── ACTIONS ────────────────────────────────────────────────
+    if (sections['Actions']) {
+      sectionTitle('Actions');
+      const alines = sections['Actions'].split('\n').filter(l => l.trim());
+      let n = 1;
+      alines.forEach(line => {
+        const bt = getBoldTitle(line);
+        if (bt) {
+          const rest = clean(line.replace(/^\*\*(.*?)\*\*\s*:?\s*/, ''));
+          doc.font('Helvetica-Bold').fontSize(10.5).fillColor(COLORS.dark)
+            .text(`${n}. ${bt}`);
+          if (rest && rest !== bt) {
+            doc.font('Helvetica').fontSize(10).fillColor(COLORS.gray)
+              .text(rest, { lineGap: 2 });
+          }
+          doc.moveDown(0.5);
+          n++;
+        } else if (line.match(/^\d+\./)) {
+          body(clean(line));
+          doc.moveDown(0.4);
+        }
+      });
+    }
+
+    // ── FOOTER sur chaque page ─────────────────────────────────
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i++) {
+      doc.switchToPage(range.start + i);
+      doc.font('Helvetica').fontSize(8).fillColor(COLORS.gray)
+        .text(
+          `deyoo  ·  Analyse confidentielle  ·  Page ${i + 1} / ${range.count}`,
+          M, doc.page.height - 36,
+          { width: W, align: 'center' }
+        );
+    }
 
     doc.end();
-
-    stream.on("finish", () => resolve(filePath));
-    stream.on("error", (err) => reject(err));
   });
 }
