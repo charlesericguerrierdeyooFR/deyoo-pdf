@@ -54,15 +54,21 @@ export async function generatePDF(data) {
 
     const sections = parseSections(data.details || '');
 
+    // Fix: handle null, "null", undefined, empty string from Bubble
     const rawProject = data.project;
     const projectName = (rawProject && rawProject !== 'null' && rawProject !== 'undefined' && rawProject.trim() !== '')
       ? rawProject
       : 'Analyse de projet';
 
-    function resetX() { doc.x = M; }
+    // --- HELPERS ---
+
+    function resetX() {
+      doc.x = M;
+    }
 
     function rule(color = COLORS.border, thickness = 0.5) {
-      doc.moveTo(M, doc.y).lineTo(M + W, doc.y).lineWidth(thickness).stroke(color);
+      doc.moveTo(M, doc.y).lineTo(M + W, doc.y)
+        .lineWidth(thickness).stroke(color);
       resetX();
     }
 
@@ -84,7 +90,7 @@ export async function generatePDF(data) {
       resetX();
     }
 
-    // ── EN-TÊTE ────────────────────────────────────────────────
+    // --- EN-TETE ---
     doc.font('Helvetica-Bold').fontSize(13).fillColor(COLORS.dark)
       .text('deyoo', M, M, { width: W, align: 'right' });
     resetX();
@@ -98,19 +104,20 @@ export async function generatePDF(data) {
     doc.font('Helvetica').fontSize(9).fillColor(COLORS.gray)
       .text(
         new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }),
-        M, doc.y, { align: 'center', width: W }
+        M, doc.y,
+        { align: 'center', width: W }
       );
     resetX();
     doc.moveDown(1.5);
     rule(COLORS.dark, 1.5);
 
-    // ── INTRODUCTION ───────────────────────────────────────────
+    // --- INTRODUCTION ---
     if (sections['Introduction']) {
       sectionTitle('Introduction');
       body(sections['Introduction']);
     }
 
-    // ── VERDICT ────────────────────────────────────────────────
+    // --- VERDICT ---
     if (sections['Verdict']) {
       sectionTitle('Verdict');
       const vy = doc.y;
@@ -122,10 +129,10 @@ export async function generatePDF(data) {
       resetX();
     }
 
-    // ── VARIABLE CLÉ ───────────────────────────────────────────
-    const vk = sections['Variable clé et seuils'] || sections['Variable clé'];
+    // --- VARIABLE CLE ---
+    const vk = sections['Variable cle et seuils'] || sections['Variable cle'] || sections['Variable clé et seuils'] || sections['Variable clé'];
     if (vk) {
-      sectionTitle('Variable clé et seuils');
+      sectionTitle('Variable cle et seuils');
       const vkLines = vk.split('\n');
       const seuilLines = vkLines.filter(l => l.includes('Seuil'));
       const intro = vkLines.filter(l => !l.includes('Seuil') && l.trim()).join(' ');
@@ -134,10 +141,10 @@ export async function generatePDF(data) {
         const bw = (W - 16) / 3;
         const by = doc.y;
         const bh = 80;
-        const labels = ['SURVIE', 'VIABILITÉ', 'CONFORT'];
+        const labels = ['SURVIE', 'VIABILITE', 'CONFORT'];
         seuilLines.slice(0, 3).forEach((line, i) => {
           const txt = clean(line.replace(/\*\*Seuil[^:]*\*\*\s*:?\s*/, ''));
-          const parts = txt.split('—');
+          const parts = txt.split('--');
           const amount = parts[0]?.trim() || '';
           const desc = parts[1]?.trim() || '';
           const bx = M + i * (bw + 8);
@@ -154,7 +161,7 @@ export async function generatePDF(data) {
       }
     }
 
-    // ── LES 5 PILIERS ──────────────────────────────────────────
+    // --- LES 5 PILIERS ---
     const piliers = sections['Les 5 piliers'];
     if (piliers) {
       sectionTitle('Les 5 piliers');
@@ -188,7 +195,7 @@ export async function generatePDF(data) {
       flushPilier();
     }
 
-    // ── ANALYSE ────────────────────────────────────────────────
+    // --- ANALYSE ---
     if (sections['Analyse']) {
       sectionTitle('Analyse');
       const paras = sections['Analyse'].split(/\n{2,}/).filter(p => p.trim());
@@ -198,7 +205,7 @@ export async function generatePDF(data) {
       });
     }
 
-    // ── CONCLUSION ─────────────────────────────────────────────
+    // --- CONCLUSION ---
     if (sections['Conclusion']) {
       sectionTitle('Conclusion');
       resetX();
@@ -207,7 +214,7 @@ export async function generatePDF(data) {
       resetX();
     }
 
-    // ── ACTIONS ────────────────────────────────────────────────
+    // --- ACTIONS ---
     if (sections['Actions']) {
       sectionTitle('Actions');
       const alines = sections['Actions'].split('\n').filter(l => l.trim());
@@ -233,7 +240,8 @@ export async function generatePDF(data) {
       });
     }
 
-    // ── FOOTER ─────────────────────────────────────────────────
+    // --- FOOTER sur chaque page ---
+    // FIX: disable bottom margin temporarily so pdfkit does not create blank pages
     const totalPages = doc.bufferedPageRange().count;
     for (let i = 0; i < totalPages; i++) {
       doc.switchToPage(i);
@@ -241,7 +249,7 @@ export async function generatePDF(data) {
       doc.page.margins.bottom = 0;
       doc.font('Helvetica').fontSize(8).fillColor(COLORS.gray)
         .text(
-          `deyoo  ·  Analyse confidentielle  ·  Page ${i + 1} / ${totalPages}`,
+          `deyoo  -  Analyse confidentielle  -  Page ${i + 1} / ${totalPages}`,
           M, doc.page.height - 36,
           { width: W, align: 'center', lineBreak: false }
         );
