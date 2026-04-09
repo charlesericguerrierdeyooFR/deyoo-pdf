@@ -54,7 +54,6 @@ export async function generatePDF(data) {
 
     const sections = parseSections(data.details || '');
 
-    // Fix: handle null, "null", undefined, empty string from Bubble
     const rawProject = data.project;
     const projectName = (rawProject && rawProject !== 'null' && rawProject !== 'undefined' && rawProject.trim() !== '')
       ? rawProject
@@ -142,24 +141,34 @@ export async function generatePDF(data) {
         const by = doc.y;
         const labels = ['SURVIE', 'VIABILITE', 'CONFORT'];
 
-        // Split on em dash (—), en dash (–), or double hyphen (--)
         const boxData = seuilLines.slice(0, 3).map(line => {
           const txt = clean(line.replace(/\*\*Seuil[^:]*\*\*\s*:?\s*/, ''));
           const parts = txt.split(/\s*[—–]\s*|\s*--\s*/);
           return { amount: parts[0]?.trim() || '', desc: parts.slice(1).join(' — ').trim() };
         });
 
-        // Calculate box height: label + amount (variable height) + desc + padding
         const LABEL_Y = 12;
         const AMOUNT_Y = 30;
-        const AMT_SIZE = 13;
+        const MAX_AMT_SIZE = 13;
         const DESC_GAP = 8;
         const BOT_PAD = 16;
 
+        // Auto-fit font size so amount stays on one line
+        function fitAmtSize(amount) {
+          let size = MAX_AMT_SIZE;
+          while (size > 7) {
+            const w = doc.font('Helvetica-Bold').fontSize(size).widthOfString(amount || '');
+            if (w <= bw - 20) break;
+            size--;
+          }
+          return size;
+        }
+
         let maxBH = 0;
         boxData.forEach(({ amount, desc }) => {
+          const amtSize = fitAmtSize(amount);
           let h = AMOUNT_Y;
-          h += doc.font('Helvetica-Bold').fontSize(AMT_SIZE).heightOfString(amount || ' ', { width: bw - 20 });
+          h += doc.font('Helvetica-Bold').fontSize(amtSize).heightOfString(amount || ' ', { width: bw - 20, lineBreak: false });
           if (desc) {
             h += DESC_GAP;
             h += doc.font('Helvetica').fontSize(8).heightOfString(desc, { width: bw - 20 });
@@ -169,21 +178,18 @@ export async function generatePDF(data) {
         });
         const bh = maxBH;
 
-        // Draw boxes
         boxData.forEach(({ amount, desc }, i) => {
           const bx = M + i * (bw + 8);
           doc.rect(bx, by, bw, bh).fill(COLORS.lightGray);
 
-          // Label
           doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLORS.gray)
             .text(labels[i], bx + 10, by + LABEL_Y, { width: bw - 20 });
 
-          // Amount (may wrap)
-          const amtH = doc.font('Helvetica-Bold').fontSize(AMT_SIZE).heightOfString(amount || ' ', { width: bw - 20 });
-          doc.font('Helvetica-Bold').fontSize(AMT_SIZE).fillColor(COLORS.dark)
-            .text(amount || '', bx + 10, by + AMOUNT_Y, { width: bw - 20 });
+          const amtSize = fitAmtSize(amount);
+          const amtH = doc.font('Helvetica-Bold').fontSize(amtSize).heightOfString(amount || ' ', { width: bw - 20, lineBreak: false });
+          doc.font('Helvetica-Bold').fontSize(amtSize).fillColor(COLORS.dark)
+            .text(amount || '', bx + 10, by + AMOUNT_Y, { width: bw - 20, lineBreak: false });
 
-          // Desc below amount
           if (desc) {
             const descY = by + AMOUNT_Y + amtH + DESC_GAP;
             doc.font('Helvetica').fontSize(8).fillColor(COLORS.gray)
@@ -275,7 +281,6 @@ export async function generatePDF(data) {
     }
 
     // --- FOOTER sur chaque page ---
-    // FIX: disable bottom margin temporarily so pdfkit does not create blank pages
     const totalPages = doc.bufferedPageRange().count;
     for (let i = 0; i < totalPages; i++) {
       doc.switchToPage(i);
