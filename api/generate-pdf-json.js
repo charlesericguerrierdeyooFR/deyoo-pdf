@@ -1,5 +1,6 @@
 import { generatePDF } from '../generate_pdf.js';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { jsonrepair } from 'jsonrepair';
 
 export const config = {
   api: {
@@ -23,22 +24,15 @@ export default async function handler(req, res) {
 
   try {
     const rawBody = await getRawBody(req);
-
     let body;
     try {
       body = JSON.parse(rawBody);
     } catch (e) {
-      const sanitized = rawBody.replace(
-        /"((?:[^"\\]|\\.)*)"/g,
-        (match, content) => {
-          const fixed = content
-            .replace(/\n/g, '\\n')
-            .replace(/\r/g, '\\r')
-            .replace(/\t/g, '\\t');
-          return `"${fixed}"`;
-        }
-      );
-      body = JSON.parse(sanitized);
+      try {
+        body = JSON.parse(jsonrepair(rawBody));
+      } catch (e2) {
+        return res.status(400).json({ error: 'Invalid JSON', details: e2.message });
+      }
     }
 
     const { project = 'Projet', verdict = '', details = '' } = body;
