@@ -72,20 +72,20 @@ export async function generatePDF(data) {
     }
 
     function sectionTitle(label) {
-      doc.moveDown(1.2);
+      doc.moveDown(2);
       resetX();
       doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.gray)
         .text(label.toUpperCase(), M, doc.y, { characterSpacing: 1.8, width: W });
-      doc.moveDown(0.3);
+      doc.moveDown(0.5);
       rule();
-      doc.moveDown(0.6);
+      doc.moveDown(0.8);
       resetX();
     }
 
     function body(text, opts = {}) {
       resetX();
       doc.font('Helvetica').fontSize(10.5).fillColor(COLORS.dark)
-        .text(clean(text), M, doc.y, { lineGap: 4, width: W, ...opts });
+        .text(clean(text), M, doc.y, { lineGap: 5, width: W, ...opts });
       resetX();
     }
 
@@ -93,12 +93,12 @@ export async function generatePDF(data) {
     doc.font('Helvetica-Bold').fontSize(13).fillColor(COLORS.dark)
       .text('deyoo', M, M, { width: W, align: 'right' });
     resetX();
-    doc.moveDown(1.5);
+    doc.moveDown(2);
 
-    doc.font('Helvetica-Bold').fontSize(20).fillColor(COLORS.dark)
+    doc.font('Helvetica-Bold').fontSize(22).fillColor(COLORS.dark)
       .text(projectName, M, doc.y, { align: 'center', width: W });
     resetX();
-    doc.moveDown(0.4);
+    doc.moveDown(0.5);
 
     doc.font('Helvetica').fontSize(9).fillColor(COLORS.gray)
       .text(
@@ -107,7 +107,7 @@ export async function generatePDF(data) {
         { align: 'center', width: W }
       );
     resetX();
-    doc.moveDown(1);
+    doc.moveDown(1.5);
     rule(COLORS.dark, 1.5);
 
     // ── INTRODUCTION ───────────────────────────────────────────
@@ -120,11 +120,11 @@ export async function generatePDF(data) {
     if (sections['Verdict']) {
       sectionTitle('Verdict');
       const vy = doc.y;
-      const vh = doc.heightOfString(clean(sections['Verdict']), { width: W - 16 });
-      doc.rect(M, vy, 3, vh + 8).fill(COLORS.dark);
+      const vh = doc.heightOfString(clean(sections['Verdict']), { width: W - 20 });
+      doc.rect(M, vy, 3, vh + 12).fill(COLORS.dark);
       doc.font('Helvetica').fontSize(10.5).fillColor(COLORS.dark)
-        .text(clean(sections['Verdict']), M + 16, vy, { width: W - 16, lineGap: 4 });
-      doc.y = vy + vh + 20;
+        .text(clean(sections['Verdict']), M + 20, vy, { width: W - 20, lineGap: 5 });
+      doc.y = vy + vh + 24;
       resetX();
     }
 
@@ -135,28 +135,27 @@ export async function generatePDF(data) {
       const vkLines = vk.split('\n');
       const seuilLines = vkLines.filter(l => l.includes('Seuil'));
       const intro = vkLines.filter(l => !l.includes('Seuil') && l.trim()).join(' ');
-      if (intro) { body(intro); doc.moveDown(0.8); }
+      if (intro) { body(intro); doc.moveDown(1.2); }
       if (seuilLines.length) {
-        const bw = (W - 12) / 3;
+        const bw = (W - 16) / 3;
         const by = doc.y;
-        const bh = 70;
+        const bh = 80;
         const labels = ['SURVIE', 'VIABILITÉ', 'CONFORT'];
         seuilLines.slice(0, 3).forEach((line, i) => {
           const txt = clean(line.replace(/\*\*Seuil[^:]*\*\*\s*:?\s*/, ''));
           const parts = txt.split('—');
           const amount = parts[0]?.trim() || '';
           const desc = parts[1]?.trim() || '';
-          const bx = M + i * (bw + 6);
+          const bx = M + i * (bw + 8);
           doc.rect(bx, by, bw, bh).fill(COLORS.lightGray);
           doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLORS.gray)
-            .text(labels[i], bx + 10, by + 10, { width: bw - 20 });
+            .text(labels[i], bx + 10, by + 12, { width: bw - 20 });
           doc.font('Helvetica-Bold').fontSize(14).fillColor(COLORS.dark)
-            .text(amount, bx + 10, by + 26, { width: bw - 20 });
+            .text(amount, bx + 10, by + 28, { width: bw - 20 });
           doc.font('Helvetica').fontSize(8).fillColor(COLORS.gray)
-            .text(desc, bx + 10, by + 46, { width: bw - 20, lineBreak: false });
+            .text(desc, bx + 10, by + 50, { width: bw - 20, lineBreak: false });
         });
-        // IMPORTANT: reset position after boxes to prevent x-drift
-        doc.y = by + bh + 16;
+        doc.y = by + bh + 20;
         resetX();
       }
     }
@@ -176,8 +175,8 @@ export async function generatePDF(data) {
           .text(title, M, doc.y, { width: W });
         resetX();
         doc.font('Helvetica').fontSize(10.5).fillColor(COLORS.dark)
-          .text(clean(content.join(' ')), M, doc.y, { lineGap: 3, width: W });
-        doc.moveDown(0.7);
+          .text(clean(content.join(' ')), M, doc.y, { lineGap: 5, width: W });
+        doc.moveDown(1);
         resetX();
       }
 
@@ -201,7 +200,7 @@ export async function generatePDF(data) {
       const paras = sections['Analyse'].split(/\n{2,}/).filter(p => p.trim());
       paras.forEach((p, i) => {
         body(p);
-        if (i < paras.length - 1) doc.moveDown(0.6);
+        if (i < paras.length - 1) doc.moveDown(0.8);
       });
     }
 
@@ -210,7 +209,7 @@ export async function generatePDF(data) {
       sectionTitle('Conclusion');
       resetX();
       doc.font('Helvetica-Oblique').fontSize(10.5).fillColor(COLORS.dark)
-        .text(clean(sections['Conclusion']), M, doc.y, { lineGap: 4, width: W });
+        .text(clean(sections['Conclusion']), M, doc.y, { lineGap: 5, width: W });
       resetX();
     }
 
@@ -229,28 +228,31 @@ export async function generatePDF(data) {
           if (rest && rest !== bt) {
             resetX();
             doc.font('Helvetica').fontSize(10).fillColor(COLORS.gray)
-              .text(rest, M, doc.y, { lineGap: 2, width: W });
+              .text(rest, M, doc.y, { lineGap: 3, width: W });
           }
-          doc.moveDown(0.5);
+          doc.moveDown(0.7);
           n++;
         } else if (line.match(/^\d+\./)) {
           body(clean(line));
-          doc.moveDown(0.4);
+          doc.moveDown(0.5);
         }
       });
     }
 
     // ── FOOTER sur chaque page ─────────────────────────────────
+    // FIX: disable bottom margin temporarily so pdfkit doesn't create blank pages
     const totalPages = doc.bufferedPageRange().count;
     for (let i = 0; i < totalPages; i++) {
       doc.switchToPage(i);
+      const savedMargin = doc.page.margins.bottom;
+      doc.page.margins.bottom = 0;
       doc.font('Helvetica').fontSize(8).fillColor(COLORS.gray)
         .text(
           `deyoo  ·  Analyse confidentielle  ·  Page ${i + 1} / ${totalPages}`,
-          M, doc.page.height - 40,
+          M, doc.page.height - 36,
           { width: W, align: 'center', lineBreak: false }
         );
-      // IMPORTANT: reset doc.y after footer to prevent blank page creation
+      doc.page.margins.bottom = savedMargin;
       doc.y = M;
     }
 
