@@ -24,14 +24,49 @@ export default async function handler(req, res) {
 
   try {
     const rawBody = await getRawBody(req);
+    const contentType = req.headers['content-type'] || '';
     let body;
-    try {
-      body = JSON.parse(rawBody);
-    } catch (e) {
+
+    if (contentType.includes('application/x-www-form-urlencoded')) {
+      const params = new URLSearchParams(rawBody);
+      body = {
+        project: params.get('project') || 'Projet',
+        verdict: params.get('verdict') || '',
+        details: params.get('details') || '',
+      };
+    } else if (contentType.includes('multipart/form-data')) {
+      const boundaryMatch = contentType.match(/boundary=([^\s;]+)/);
+      if (boundaryMatch) {
+        const boundary = boundaryMatch[1];
+        const parts = {};
+        const delimiter = `--${boundary}`;
+        const chunks = rawBody.split(delimiter);
+        for (const chunk of chunks) {
+          if (!chunk || chunk.trim() === '--' || chunk.trim() === '') continue;
+          const separatorIdx = chunk.indexOf('\r\n\r\n');
+          if (separatorIdx === -1) continue;
+          const headers = chunk.slice(0, separatorIdx);
+          const value = chunk.slice(separatorIdx + 4).replace(/\r\n$/, '');
+          const nameMatch = headers.match(/name="([^"]+)"/);
+          if (nameMatch) parts[nameMatch[1]] = value;
+        }
+        body = {
+          project: parts.project || 'Projet',
+          verdict: parts.verdict || '',
+          details: parts.details || '',
+        };
+      } else {
+        return res.status(400).json({ error: 'Missing multipart boundary' });
+      }
+    } else {
       try {
-        body = JSON.parse(jsonrepair(rawBody));
-      } catch (e2) {
-        return res.status(400).json({ error: 'Invalid JSON', details: e2.message });
+        body = JSON.parse(rawBody);
+      } catch (e) {
+        try {
+          body = JSON.parse(jsonrepair(rawBody));
+        } catch (e2) {
+          return res.status(400).json({ error: 'Invalid JSON', details: e2.message });
+        }
       }
     }
 
