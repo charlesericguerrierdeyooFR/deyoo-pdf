@@ -191,4 +191,64 @@ export async function generatePDF(data) {
     // ── ANALYSE ────────────────────────────────────────────────
     if (sections['Analyse']) {
       sectionTitle('Analyse');
-      const paras = sections['Analyse'].split(/\n{2,}/).filter(p
+      const paras = sections['Analyse'].split(/\n{2,}/).filter(p => p.trim());
+      paras.forEach((p, i) => {
+        body(p);
+        if (i < paras.length - 1) doc.moveDown(0.8);
+      });
+    }
+
+    // ── CONCLUSION ─────────────────────────────────────────────
+    if (sections['Conclusion']) {
+      sectionTitle('Conclusion');
+      resetX();
+      doc.font('Helvetica-Oblique').fontSize(10.5).fillColor(COLORS.dark)
+        .text(clean(sections['Conclusion']), M, doc.y, { lineGap: 5, width: W });
+      resetX();
+    }
+
+    // ── ACTIONS ────────────────────────────────────────────────
+    if (sections['Actions']) {
+      sectionTitle('Actions');
+      const alines = sections['Actions'].split('\n').filter(l => l.trim());
+      let n = 1;
+      alines.forEach(line => {
+        const bt = getBoldTitle(line);
+        if (bt) {
+          const rest = clean(line.replace(/^\*\*(.*?)\*\*\s*:?\s*/, ''));
+          resetX();
+          doc.font('Helvetica-Bold').fontSize(10.5).fillColor(COLORS.dark)
+            .text(`${n}. ${bt}`, M, doc.y, { width: W });
+          if (rest && rest !== bt) {
+            resetX();
+            doc.font('Helvetica').fontSize(10).fillColor(COLORS.gray)
+              .text(rest, M, doc.y, { lineGap: 3, width: W });
+          }
+          doc.moveDown(0.7);
+          n++;
+        } else if (line.match(/^\d+\./)) {
+          body(clean(line));
+          doc.moveDown(0.5);
+        }
+      });
+    }
+
+    // ── FOOTER ─────────────────────────────────────────────────
+    const totalPages = doc.bufferedPageRange().count;
+    for (let i = 0; i < totalPages; i++) {
+      doc.switchToPage(i);
+      const savedMargin = doc.page.margins.bottom;
+      doc.page.margins.bottom = 0;
+      doc.font('Helvetica').fontSize(8).fillColor(COLORS.gray)
+        .text(
+          `deyoo  ·  Analyse confidentielle  ·  Page ${i + 1} / ${totalPages}`,
+          M, doc.page.height - 36,
+          { width: W, align: 'center', lineBreak: false }
+        );
+      doc.page.margins.bottom = savedMargin;
+      doc.y = M;
+    }
+
+    doc.end();
+  });
+}
