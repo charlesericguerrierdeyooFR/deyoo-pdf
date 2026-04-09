@@ -140,21 +140,38 @@ export async function generatePDF(data) {
       if (seuilLines.length) {
         const bw = (W - 16) / 3;
         const by = doc.y;
-        const bh = 80;
         const labels = ['SURVIE', 'VIABILITE', 'CONFORT'];
-        seuilLines.slice(0, 3).forEach((line, i) => {
+
+        // Parse box data first
+        const boxData = seuilLines.slice(0, 3).map(line => {
           const txt = clean(line.replace(/\*\*Seuil[^:]*\*\*\s*:?\s*/, ''));
           const parts = txt.split('--');
-          const amount = parts[0]?.trim() || '';
-          const desc = parts[1]?.trim() || '';
+          return { amount: parts[0]?.trim() || '', desc: parts[1]?.trim() || '' };
+        });
+
+        // Calculate box height dynamically based on longest description
+        const DESC_TOP = 52; // y offset inside box where desc starts
+        let maxDescH = 0;
+        boxData.forEach(({ desc }) => {
+          if (desc) {
+            const h = doc.font('Helvetica').fontSize(8).heightOfString(desc, { width: bw - 20 });
+            if (h > maxDescH) maxDescH = h;
+          }
+        });
+        const bh = DESC_TOP + maxDescH + 16; // 16px bottom padding
+
+        // Draw boxes
+        boxData.forEach(({ amount, desc }, i) => {
           const bx = M + i * (bw + 8);
           doc.rect(bx, by, bw, bh).fill(COLORS.lightGray);
           doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLORS.gray)
             .text(labels[i], bx + 10, by + 12, { width: bw - 20 });
-          doc.font('Helvetica-Bold').fontSize(14).fillColor(COLORS.dark)
+          doc.font('Helvetica-Bold').fontSize(13).fillColor(COLORS.dark)
             .text(amount, bx + 10, by + 28, { width: bw - 20 });
-          doc.font('Helvetica').fontSize(8).fillColor(COLORS.gray)
-            .text(desc, bx + 10, by + 50, { width: bw - 20, lineBreak: false });
+          if (desc) {
+            doc.font('Helvetica').fontSize(8).fillColor(COLORS.gray)
+              .text(desc, bx + 10, by + DESC_TOP, { width: bw - 20 });
+          }
         });
         doc.y = by + bh + 20;
         resetX();
