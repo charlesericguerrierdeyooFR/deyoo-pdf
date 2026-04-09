@@ -142,35 +142,52 @@ export async function generatePDF(data) {
         const by = doc.y;
         const labels = ['SURVIE', 'VIABILITE', 'CONFORT'];
 
-        // Parse box data first
+        // Split on em dash (—), en dash (–), or double hyphen (--)
         const boxData = seuilLines.slice(0, 3).map(line => {
           const txt = clean(line.replace(/\*\*Seuil[^:]*\*\*\s*:?\s*/, ''));
-          const parts = txt.split('--');
-          return { amount: parts[0]?.trim() || '', desc: parts[1]?.trim() || '' };
+          const parts = txt.split(/\s*[—–]\s*|\s*--\s*/);
+          return { amount: parts[0]?.trim() || '', desc: parts.slice(1).join(' — ').trim() };
         });
 
-        // Calculate box height dynamically based on longest description
-        const DESC_TOP = 52; // y offset inside box where desc starts
-        let maxDescH = 0;
-        boxData.forEach(({ desc }) => {
+        // Calculate box height: label + amount (variable height) + desc + padding
+        const LABEL_Y = 12;
+        const AMOUNT_Y = 30;
+        const AMT_SIZE = 13;
+        const DESC_GAP = 8;
+        const BOT_PAD = 16;
+
+        let maxBH = 0;
+        boxData.forEach(({ amount, desc }) => {
+          let h = AMOUNT_Y;
+          h += doc.font('Helvetica-Bold').fontSize(AMT_SIZE).heightOfString(amount || ' ', { width: bw - 20 });
           if (desc) {
-            const h = doc.font('Helvetica').fontSize(8).heightOfString(desc, { width: bw - 20 });
-            if (h > maxDescH) maxDescH = h;
+            h += DESC_GAP;
+            h += doc.font('Helvetica').fontSize(8).heightOfString(desc, { width: bw - 20 });
           }
+          h += BOT_PAD;
+          if (h > maxBH) maxBH = h;
         });
-        const bh = DESC_TOP + maxDescH + 16; // 16px bottom padding
+        const bh = maxBH;
 
         // Draw boxes
         boxData.forEach(({ amount, desc }, i) => {
           const bx = M + i * (bw + 8);
           doc.rect(bx, by, bw, bh).fill(COLORS.lightGray);
+
+          // Label
           doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLORS.gray)
-            .text(labels[i], bx + 10, by + 12, { width: bw - 20 });
-          doc.font('Helvetica-Bold').fontSize(13).fillColor(COLORS.dark)
-            .text(amount, bx + 10, by + 28, { width: bw - 20 });
+            .text(labels[i], bx + 10, by + LABEL_Y, { width: bw - 20 });
+
+          // Amount (may wrap)
+          const amtH = doc.font('Helvetica-Bold').fontSize(AMT_SIZE).heightOfString(amount || ' ', { width: bw - 20 });
+          doc.font('Helvetica-Bold').fontSize(AMT_SIZE).fillColor(COLORS.dark)
+            .text(amount || '', bx + 10, by + AMOUNT_Y, { width: bw - 20 });
+
+          // Desc below amount
           if (desc) {
+            const descY = by + AMOUNT_Y + amtH + DESC_GAP;
             doc.font('Helvetica').fontSize(8).fillColor(COLORS.gray)
-              .text(desc, bx + 10, by + DESC_TOP, { width: bw - 20 });
+              .text(desc, bx + 10, descY, { width: bw - 20 });
           }
         });
         doc.y = by + bh + 20;
