@@ -120,11 +120,13 @@ export async function generatePDF(data) {
     if (sections['Verdict']) {
       sectionTitle('Verdict');
       const vy = doc.y;
-      const vh = doc.heightOfString(clean(sections['Verdict']), { width: W - 20 });
-      doc.rect(M, vy, 3, vh + 12).fill(COLORS.dark);
+      // Render text first so doc.y reflects actual rendered height (lineGap included)
       doc.font('Helvetica').fontSize(10.5).fillColor(COLORS.dark)
         .text(clean(sections['Verdict']), M + 20, vy, { width: W - 20, lineGap: 5 });
-      doc.y = vy + vh + 24;
+      const endY = doc.y;
+      // Draw bar using actual rendered height
+      doc.rect(M, vy, 3, endY - vy + 4).fill(COLORS.dark);
+      doc.y = endY + 20;
       resetX();
     }
 
@@ -153,7 +155,6 @@ export async function generatePDF(data) {
         const DESC_GAP = 8;
         const BOT_PAD = 16;
 
-        // Auto-fit font size so amount stays on one line
         function fitAmtSize(amount) {
           let size = MAX_AMT_SIZE;
           while (size > 7) {
