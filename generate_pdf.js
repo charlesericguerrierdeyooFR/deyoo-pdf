@@ -8,15 +8,33 @@ const COLORS = {
   border:    '#e5e5ea',
 };
 
+const SECTION_MAP = {
+  'INTRODUCTION':           'Introduction',
+  'VERDICT':                'Verdict',
+  'VARIABLE CLE ET SEUILS': 'Variable cle et seuils',
+  'VARIABLE CLÉ ET SEUILS': 'Variable cle et seuils',
+  'VARIABLE CLE':           'Variable cle et seuils',
+  'VARIABLE CLÉ':           'Variable cle et seuils',
+  'LES 5 PILIERS':          'Les 5 piliers',
+  'ANALYSE':                'Analyse',
+  'CONCLUSION':             'Conclusion',
+  'ACTIONS':                'Actions',
+};
+
 function parseSections(text) {
   const sections = {};
   const lines = text.split('\n');
   let current = null;
   let buffer = [];
   for (const line of lines) {
+    const trimmed = line.trim();
     if (line.startsWith('## ')) {
       if (current) sections[current] = buffer.join('\n').trim();
       current = line.replace('## ', '').trim();
+      buffer = [];
+    } else if (trimmed && SECTION_MAP[trimmed.toUpperCase()]) {
+      if (current) sections[current] = buffer.join('\n').trim();
+      current = SECTION_MAP[trimmed.toUpperCase()];
       buffer = [];
     } else {
       buffer.push(line);
@@ -45,7 +63,6 @@ export async function generatePDF(data) {
       bufferPages: true,
       info: { Title: 'Analyse deyoo', Author: 'deyoo' },
     });
-
     const W = doc.page.width - M * 2;
     const buffers = [];
     doc.on('data', c => buffers.push(c));
@@ -53,17 +70,12 @@ export async function generatePDF(data) {
     doc.on('error', reject);
 
     const sections = parseSections(data.details || '');
-
     const rawProject = data.project;
     const projectName = (rawProject && rawProject !== 'null' && rawProject !== 'undefined' && rawProject.trim() !== '')
       ? rawProject
       : 'Analyse de projet';
 
-    // --- HELPERS ---
-
-    function resetX() {
-      doc.x = M;
-    }
+    function resetX() { doc.x = M; }
 
     function rule(color = COLORS.border, thickness = 0.5) {
       doc.moveTo(M, doc.y).lineTo(M + W, doc.y)
@@ -94,12 +106,10 @@ export async function generatePDF(data) {
       .text('deyoo', M, M, { width: W, align: 'right' });
     resetX();
     doc.moveDown(2);
-
     doc.font('Helvetica-Bold').fontSize(22).fillColor(COLORS.dark)
       .text(projectName, M, doc.y, { align: 'center', width: W });
     resetX();
     doc.moveDown(0.5);
-
     doc.font('Helvetica').fontSize(9).fillColor(COLORS.gray)
       .text(
         new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }),
@@ -120,11 +130,9 @@ export async function generatePDF(data) {
     if (sections['Verdict']) {
       sectionTitle('Verdict');
       const vy = doc.y;
-      // Render text first so doc.y reflects actual rendered height (lineGap included)
       doc.font('Helvetica').fontSize(10.5).fillColor(COLORS.dark)
         .text(clean(sections['Verdict']), M + 20, vy, { width: W - 20, lineGap: 5 });
       const endY = doc.y;
-      // Draw bar using actual rendered height
       doc.rect(M, vy, 3, endY - vy + 4).fill(COLORS.dark);
       doc.y = endY + 20;
       resetX();
@@ -135,16 +143,35 @@ export async function generatePDF(data) {
     if (vk) {
       sectionTitle('Variable cle et seuils');
       const vkLines = vk.split('\n');
-      const seuilLines = vkLines.filter(l => l.includes('Seuil'));
-      const intro = vkLines.filter(l => !l.includes('Seuil') && l.trim()).join(' ');
+
+      const SEUIL_LABELS = ['SURVIE', 'VIABILITE', 'VIABILITÉ', 'CONFORT'];
+      const seuilLines = vkLines.filter(l =>
+        l.includes('Seuil') || SEUIL_LABELS.some(k => l.trim().toUpperCase().startsWith(k))
+      );
+      const intro = vkLines.filter(l => {
+        const up = l.trim().toUpperCase();
+        return !l.includes('Seuil') && !SEUIL_LABELS.some(k => up.startsWith(k)) && l.trim();
+      }).join(' ');
+
       if (intro) { body(intro); doc.moveDown(1.2); }
+
       if (seuilLines.length) {
         const bw = (W - 16) / 3;
         const by = doc.y;
         const labels = ['SURVIE', 'VIABILITE', 'CONFORT'];
 
         const boxData = seuilLines.slice(0, 3).map(line => {
-          const txt = clean(line.replace(/\*\*Seuil[^:]*\*\*\s*:?\s*/, ''));
+          let txt = clean(line);
+          // Ancien format : **Seuil X** : ...
+          txt = txt.replace(/\*\*Seuil[^:]*\*\*\s*:?\s*/i, '');
+          // Nouveau format : SURVIE : ...
+          txt = txt.replace(/^(SURVIE|VIABILITE|VIABILITÉ|CONFORT)\s*:?\s*/i, '').trim();
+          // Format "montant (description)"
+          const parenMatch = txt.match(/^([^(]+?)\s*\(([^)]+)\)/);
+          if (parenMatch) {
+            return { amount: parenMatch[1].trim(), desc: parenMatch[2].trim() };
+          }
+          // Format "montant — description"
           const parts = txt.split(/\s*[—–]\s*|\s*--\s*/);
           return { amount: parts[0]?.trim() || '', desc: parts.slice(1).join(' — ').trim() };
         });
@@ -177,20 +204,17 @@ export async function generatePDF(data) {
           h += BOT_PAD;
           if (h > maxBH) maxBH = h;
         });
-        const bh = maxBH;
 
+        const bh = maxBH;
         boxData.forEach(({ amount, desc }, i) => {
           const bx = M + i * (bw + 8);
           doc.rect(bx, by, bw, bh).fill(COLORS.lightGray);
-
           doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLORS.gray)
             .text(labels[i], bx + 10, by + LABEL_Y, { width: bw - 20 });
-
           const amtSize = fitAmtSize(amount);
           const amtH = doc.font('Helvetica-Bold').fontSize(amtSize).heightOfString(amount || ' ', { width: bw - 20, lineBreak: false });
           doc.font('Helvetica-Bold').fontSize(amtSize).fillColor(COLORS.dark)
             .text(amount || '', bx + 10, by + AMOUNT_Y, { width: bw - 20, lineBreak: false });
-
           if (desc) {
             const descY = by + AMOUNT_Y + amtH + DESC_GAP;
             doc.font('Helvetica').fontSize(8).fillColor(COLORS.gray)
@@ -207,33 +231,62 @@ export async function generatePDF(data) {
     if (piliers) {
       sectionTitle('Les 5 piliers');
       const lines = piliers.split('\n');
-      let title = null;
-      let content = [];
+      const hasBoldTitles = lines.some(l => getBoldTitle(l));
 
-      function flushPilier() {
-        if (!title) return;
-        resetX();
-        doc.font('Helvetica-Bold').fontSize(10.5).fillColor(COLORS.dark)
-          .text(title, M, doc.y, { width: W });
-        resetX();
-        doc.font('Helvetica').fontSize(10.5).fillColor(COLORS.dark)
-          .text(clean(content.join(' ')), M, doc.y, { lineGap: 5, width: W });
-        doc.moveDown(1);
-        resetX();
-      }
-
-      for (const line of lines) {
-        const bt = getBoldTitle(line);
-        if (bt) {
-          flushPilier();
-          title = bt;
-          const rest = line.replace(/^\*\*(.*?)\*\*\s*/, '').trim();
-          content = rest ? [rest] : [];
-        } else if (line.trim()) {
-          content.push(line.trim());
+      if (hasBoldTitles) {
+        // Format original : **Titre** contenu
+        let title = null;
+        let content = [];
+        function flushPilier() {
+          if (!title) return;
+          resetX();
+          doc.font('Helvetica-Bold').fontSize(10.5).fillColor(COLORS.dark)
+            .text(title, M, doc.y, { width: W });
+          resetX();
+          doc.font('Helvetica').fontSize(10.5).fillColor(COLORS.dark)
+            .text(clean(content.join(' ')), M, doc.y, { lineGap: 5, width: W });
+          doc.moveDown(1);
+          resetX();
+        }
+        for (const line of lines) {
+          const bt = getBoldTitle(line);
+          if (bt) {
+            flushPilier();
+            title = bt;
+            const rest = line.replace(/^\*\*(.*?)\*\*\s*/, '').trim();
+            content = rest ? [rest] : [];
+          } else if (line.trim()) {
+            content.push(line.trim());
+          }
+        }
+        flushPilier();
+      } else {
+        // Format texte brut : "Titre : description. Titre : description."
+        const fullText = lines.join(' ').replace(/\s+/g, ' ').trim();
+        const pilierParts = fullText.split(/\.\s+(?=[A-ZÉÀÈÙ][^\.:]{2,40}\s*:)/);
+        if (pilierParts.length > 1) {
+          pilierParts.forEach(part => {
+            const colonIdx = part.indexOf(' : ');
+            if (colonIdx > 0 && colonIdx < 50) {
+              const t = part.slice(0, colonIdx).trim();
+              const d = part.slice(colonIdx + 3).trim();
+              resetX();
+              doc.font('Helvetica-Bold').fontSize(10.5).fillColor(COLORS.dark)
+                .text(t, M, doc.y, { width: W });
+              resetX();
+              doc.font('Helvetica').fontSize(10.5).fillColor(COLORS.dark)
+                .text(clean(d), M, doc.y, { lineGap: 5, width: W });
+              doc.moveDown(1);
+              resetX();
+            } else if (part.trim()) {
+              body(part.trim());
+              doc.moveDown(0.5);
+            }
+          });
+        } else {
+          body(clean(fullText));
         }
       }
-      flushPilier();
     }
 
     // --- ANALYSE ---
@@ -281,7 +334,7 @@ export async function generatePDF(data) {
       });
     }
 
-    // --- FOOTER sur chaque page ---
+    // --- FOOTER ---
     const totalPages = doc.bufferedPageRange().count;
     for (let i = 0; i < totalPages; i++) {
       doc.switchToPage(i);
@@ -296,7 +349,6 @@ export async function generatePDF(data) {
       doc.page.margins.bottom = savedMargin;
       doc.y = M;
     }
-
     doc.end();
   });
 }
