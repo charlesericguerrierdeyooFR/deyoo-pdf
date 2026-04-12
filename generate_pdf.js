@@ -263,7 +263,7 @@ export async function generatePDF(data) {
       } else {
         // Format texte brut : "Titre : description. Titre : description."
         const fullText = lines.join(' ').replace(/\s+/g, ' ').trim();
-        const pilierParts = fullText.split(/\.\s+(?=[A-ZÉÀÈÙ][^\.:]{2,40}\s*:)/);
+        const pilierParts = fullText.split(/\.\s+(?=[A-ZÉÀÈÙ][^\.:]{2,70}\s*:)/);
         if (pilierParts.length > 1) {
           pilierParts.forEach(part => {
             const colonIdx = part.indexOf(' : ');
