@@ -144,7 +144,7 @@ export async function generatePDF(data) {
       sectionTitle('Variable cle et seuils');
       const vkLines = vk.split('\n');
 
-      const SEUIL_LABELS = ['SURVIE', 'VIABILITE', 'VIABILITÉ', 'CONFORT'];
+      const SEUIL_LABELS = ['CONSERVATEUR', 'RÉALISTE', 'REALISTE', 'FONDATEUR'];
       const seuilLines = vkLines.filter(l =>
         l.includes('Seuil') || SEUIL_LABELS.some(k => l.trim().toUpperCase().startsWith(k))
       );
@@ -158,14 +158,14 @@ export async function generatePDF(data) {
       if (seuilLines.length) {
         const bw = (W - 16) / 3;
         const by = doc.y;
-        const labels = ['SURVIE', 'VIABILITE', 'CONFORT'];
+        const labels = ['CONSERVATEUR', 'RÉALISTE', 'FONDATEUR'];
 
         const boxData = seuilLines.slice(0, 3).map(line => {
           let txt = clean(line);
           // Ancien format : **Seuil X** : ...
           txt = txt.replace(/\*\*Seuil[^:]*\*\*\s*:?\s*/i, '');
           // Nouveau format : SURVIE : ...
-          txt = txt.replace(/^(SURVIE|VIABILITE|VIABILITÉ|CONFORT)\s*:?\s*/i, '').trim();
+          txt = txt.replace(/^(CONSERVATEUR|RÉALISTE|REALISTE|FONDATEUR)\s*:?\s*/i, '').trim();
           // Format "montant (description)"
           const parenMatch = txt.match(/^([^(]+?)\s*\(([^)]+)\)/);
           if (parenMatch) {
