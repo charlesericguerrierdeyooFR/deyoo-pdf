@@ -8,15 +8,37 @@ const COLORS = {
   border:    '#e5e5ea',
 };
 
+// Maps uppercase section names (as Claude outputs them) to internal keys
+const SECTION_MAP = {
+  'INTRODUCTION':          'Introduction',
+  'VERDICT':               'Verdict',
+  'VARIABLE CLE ET SEUILS': 'Variable cle et seuils',
+  'VARIABLE CLÉ ET SEUILS': 'Variable cle et seuils',
+  'LES 5 PILIERS':         'Les 5 piliers',
+  'ANALYSE':               'Analyse',
+  'CONCLUSION':            'Conclusion',
+  'ACTIONS':               'Actions',
+};
+
 function parseSections(text) {
   const sections = {};
   const lines = text.split('\n');
   let current = null;
   let buffer = [];
   for (const line of lines) {
+    const trimmed = line.trim();
+    let detected = null;
     if (line.startsWith('## ')) {
+      // Markdown header (## INTRODUCTION or ## Introduction)
+      const raw = line.replace('## ', '').trim();
+      detected = SECTION_MAP[raw.toUpperCase()] || raw;
+    } else {
+      // Plain uppercase section title (no ## prefix)
+      detected = SECTION_MAP[trimmed.toUpperCase()] || null;
+    }
+    if (detected) {
       if (current) sections[current] = buffer.join('\n').trim();
-      current = line.replace('## ', '').trim();
+      current = detected;
       buffer = [];
     } else {
       buffer.push(line);
@@ -144,7 +166,6 @@ export async function generatePDF(data) {
 
         // Parse each scenario line: "LABEL : amount — desc" or "LABEL = amount — desc"
         const boxData = seuilLines.slice(0, 3).map(line => {
-          // Remove the scenario label prefix (CONSERVATEUR :, RÉALISTE =, etc.)
           const txt = clean(line.replace(/^[A-ZÉÀ]+\s*[:=]\s*/i, ''));
           const parts = txt.split(/\s*[—–]\s*|\s*--\s*/);
           return { amount: parts[0]?.trim() || '', desc: parts.slice(1).join(' — ').trim() };
