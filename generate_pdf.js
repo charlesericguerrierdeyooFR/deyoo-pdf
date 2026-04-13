@@ -15,6 +15,7 @@ const SECTION_MAP = {
   'VARIABLE CLE ET SEUILS': 'Variable cle et seuils',
   'VARIABLE CLÉ ET SEUILS': 'Variable cle et seuils',
   'LES 5 PILIERS':         'Les 5 piliers',
+  'PILIERS':               'Les 5 piliers',
   'ANALYSE':               'Analyse',
   'CONCLUSION':            'Conclusion',
   'ACTIONS':               'Actions',
