@@ -76,7 +76,7 @@ export async function generatePDF(data) {
     const doc = new PDFDocument({
       size: 'A4',
       margins: { top: M, bottom: M, left: M, right: M },
-      autoFirstPage: true,
+      autoFirstPage: false,   // On ajoute la 1ère page manuellement après registerFont
       bufferPages: true,
       info: { Title: 'Étude deyoo', Author: 'deyoo' },
     });
@@ -94,22 +94,47 @@ export async function generatePDF(data) {
       // Fallback silencieux sur Times-BoldItalic
     }
 
-    const W = doc.page.width - M * 2;
     const buffers = [];
     doc.on('data', c => buffers.push(c));
     doc.on('end', () => resolve(Buffer.concat(buffers)));
     doc.on('error', reject);
 
-    // Filet terracotta discret en haut de chaque page (signature de marque sans flooding)
-    function paintBrandStripe() {
-      doc.save();
-      doc.rect(0, 0, doc.page.width, 4).fill(COLORS.accent);
-      doc.restore();
-      doc.fillColor(COLORS.ink);
-    }
-    doc.on('pageAdded', paintBrandStripe);
-    paintBrandStripe();  // pour la 1ère page
+    // Logo "deyoo" + point terracotta dessiné en haut à droite de chaque page
+    function drawTopLogo() {
+      const fontSize = 22;
+      const dotSize = 5;
+      const gap = 5;
+      doc.font(LOGO_FONT).fontSize(fontSize).fillColor(COLORS.ink);
+      const textW = doc.widthOfString('deyoo');
+      const x = doc.page.margins.left + (doc.page.width - doc.page.margins.left - doc.page.margins.right) - textW - gap - dotSize;
+      const y = M;
 
+      if (LOGO_USE_SKEW) {
+        doc.save();
+        doc.translate(x, y);
+        doc.transform(1, 0, -0.16, 1, 0, 0);
+        doc.text('deyoo', 0, 0, { lineBreak: false });
+        doc.restore();
+      } else {
+        doc.text('deyoo', x, y, { lineBreak: false });
+      }
+
+      // Point terracotta posé sur la baseline du texte
+      const dotX = x + textW + gap;
+      const dotY = y + fontSize - 5;  // ajusté pour tomber sur la baseline
+      doc.circle(dotX, dotY, dotSize / 2).fill(COLORS.accent);
+      doc.fillColor(COLORS.ink);
+
+      // Réserve l'espace du logo : le contenu commence au moins 35px en dessous
+      doc.y = M + 40;
+      doc.x = M;
+    }
+
+    // Le logo est dessiné automatiquement à chaque ajout de page
+    doc.on('pageAdded', drawTopLogo);
+    doc.addPage();  // déclenche drawTopLogo pour la 1ère page
+
+    const W = doc.page.width - M * 2;
     const sections = parseSections(data.details || '');
 
     const rawProject = data.project;
@@ -144,40 +169,10 @@ export async function generatePDF(data) {
       resetX();
     }
 
-    // Dessine le logo "deyoo" + point terracotta, avec ou sans skew italique selon la police
-    function drawLogo(x, y) {
-      const fontSize = 16;
-      doc.font(LOGO_FONT).fontSize(fontSize).fillColor(COLORS.ink);
-      const textW = doc.widthOfString('deyoo');
-      const dotSize = 4;
-      const gap = 4;
-
-      if (LOGO_USE_SKEW) {
-        // Faux italique pour Abhaya Libre (qui n'a pas de variante italic native)
-        doc.save();
-        doc.translate(x, y);
-        doc.transform(1, 0, -0.16, 1, 0, 0);
-        doc.text('deyoo', 0, 0, { lineBreak: false });
-        doc.restore();
-      } else {
-        doc.text('deyoo', x, y, { lineBreak: false });
-      }
-
-      // Point terracotta (positionné à droite du texte, sur la baseline)
-      const dotX = x + textW + gap;
-      const dotY = y + fontSize - 3;
-      doc.circle(dotX, dotY, dotSize / 2).fill(COLORS.accent);
-      doc.fillColor(COLORS.ink);
-      return { width: textW + gap + dotSize, height: fontSize };
-    }
-
-    // --- EN-TÊTE PAGE 1 : logo aligné droite, plus d'air avant le titre ---
-    doc.font(LOGO_FONT).fontSize(16);
-    const headerLogoW = doc.widthOfString('deyoo') + 8;
-    drawLogo(M + W - headerLogoW, M);
-
+    // --- EN-TÊTE PAGE 1 : le logo est déjà dessiné par drawTopLogo (handler pageAdded) ---
+    // On laisse plus d'air avant le titre principal
     resetX();
-    doc.y = M + 70;  // plus d'air en haut de page 1 (avant : ~30)
+    doc.y = M + 70;
 
     // --- TITRE PROJET ---
     doc.font('Times-Bold').fontSize(28).fillColor(COLORS.ink)
@@ -312,8 +307,7 @@ export async function generatePDF(data) {
     // --- LES 5 PILIERS (force le saut de page pour aérer la page 1) ---
     const piliers = sections['Les 5 piliers'];
     if (piliers) {
-      doc.addPage();  // Force page break avant Les 5 piliers
-      doc.y = M + 30;  // un peu d'air en haut de page 2
+      doc.addPage();  // Force page break avant Les 5 piliers ; drawTopLogo positionne doc.y = M+40
       sectionTitle('Les 5 piliers');
       const lines = piliers.split('\n');
 
@@ -401,7 +395,7 @@ export async function generatePDF(data) {
       doc.page.margins.bottom = 0;
       doc.font('Times-Italic').fontSize(8.5).fillColor(COLORS.mute)
         .text(
-          `une étude complète deyoo  ·  deyoo.app  ·  page ${i + 1} / ${totalPages}`,
+          `une étude deyoo  ·  deyoo.app  ·  page ${i + 1} / ${totalPages}`,
           M, doc.page.height - 36,
           { width: W, align: 'center', lineBreak: false }
         );
