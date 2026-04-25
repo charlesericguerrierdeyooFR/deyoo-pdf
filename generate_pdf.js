@@ -1,21 +1,23 @@
 import PDFDocument from 'pdfkit';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { existsSync } from 'fs';
 
-// Palette deyoo — alignée sur l'identité Bubble (cream / serif / terracotta)
+// Palette deyoo — couleurs utilisées en accents (pas de fond pleine page pour préserver l'encre en print)
 const COLORS = {
-  bg:         '#F4F0E6',  // crème de fond
-  bgSoft:     '#EDE7D7',  // fond des encadrés
+  paper:      '#FFFFFF',  // fond de page : blanc (compatible print)
+  bgSoft:     '#EDE7D7',  // fond crème pour les encadrés (3 scénarios)
   ink:        '#0D1418',  // texte principal
   inkSoft:    '#3A4048',  // texte secondaire
   mute:       '#8A847A',  // texte discret
-  accent:     '#D35A2A',  // terracotta (titres de section, accent verdict, point logo)
-  accentWarm: '#F2B03D',  // saffron (réservé highlights ponctuels)
-  border:     '#B8A98A',  // séparateurs / bordures discrètes
+  accent:     '#D35A2A',  // terracotta (titres de section, accent verdict, point logo, filet brand)
+  accentSoft: '#F6E6DC',  // terracotta très pâle
+  border:     '#B8A98A',  // séparateurs
 };
 
 // Détecte un scénario "non chiffré" → bascule l'encadré FONDATEUR en mode invitation
 const NO_DATA_PATTERN = /(non\s+(calculable|quantifié|évaluable|projeter)|données?\s+insuffisantes?|impossible\s+à\s+(calculer|projeter|évaluer)|nécessite\s+étude\s+de\s+marché|pas\s+(suffisamment|assez)\s+de\s+données)/i;
 
-// Texte d'invitation affiché dans la 3e case quand FONDATEUR est vide
 const FONDATEUR_PROMPT = {
   amount: 'À préciser',
   desc:   'indiquer prix moyen, volume cible mensuel, marge brute estimée et coûts fixes pour calculer ce scénario.',
@@ -32,6 +34,11 @@ const SECTION_MAP = {
   'CONCLUSION':              'Conclusion',
   'ACTIONS':                 'Actions',
 };
+
+// Chemin vers la police Abhaya Libre (uploadée à la racine du repo depuis Google Fonts)
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ABHAYA_PATH = join(__dirname, 'AbhayaLibre-SemiBold.ttf');
+const HAS_ABHAYA  = existsSync(ABHAYA_PATH);
 
 function parseSections(text) {
   const sections = {};
@@ -69,38 +76,48 @@ export async function generatePDF(data) {
     const doc = new PDFDocument({
       size: 'A4',
       margins: { top: M, bottom: M, left: M, right: M },
-      autoFirstPage: false,   // On ajoute la première page manuellement pour peindre le fond
+      autoFirstPage: true,
       bufferPages: true,
-      info: { Title: 'Compte-rendu deyoo', Author: 'deyoo' },
+      info: { Title: 'Étude deyoo', Author: 'deyoo' },
     });
 
+    // Charge Abhaya Libre si présent (upload de la police par l'utilisateur dans /fonts/)
+    let LOGO_FONT = 'Times-BoldItalic';
+    let LOGO_USE_SKEW = false;
+    try {
+      if (HAS_ABHAYA) {
+        doc.registerFont('Abhaya', ABHAYA_PATH);
+        LOGO_FONT = 'Abhaya';
+        LOGO_USE_SKEW = true;  // Abhaya n'a pas d'italique natif → faux italique via transform
+      }
+    } catch (e) {
+      // Fallback silencieux sur Times-BoldItalic
+    }
+
+    const W = doc.page.width - M * 2;
     const buffers = [];
     doc.on('data', c => buffers.push(c));
     doc.on('end', () => resolve(Buffer.concat(buffers)));
     doc.on('error', reject);
 
-    // Peint le fond crème sur chaque nouvelle page
-    function paintBackground() {
+    // Filet terracotta discret en haut de chaque page (signature de marque sans flooding)
+    function paintBrandStripe() {
       doc.save();
-      doc.rect(0, 0, doc.page.width, doc.page.height).fill(COLORS.bg);
+      doc.rect(0, 0, doc.page.width, 4).fill(COLORS.accent);
       doc.restore();
-      doc.fillColor(COLORS.ink);  // restaure la couleur de texte par défaut
+      doc.fillColor(COLORS.ink);
     }
-
-    doc.on('pageAdded', paintBackground);
-    doc.addPage();  // Déclenche paintBackground pour la 1ère page
-
-    const W = doc.page.width - M * 2;
+    doc.on('pageAdded', paintBrandStripe);
+    paintBrandStripe();  // pour la 1ère page
 
     const sections = parseSections(data.details || '');
 
     const rawProject = data.project;
     const projectName = (rawProject && rawProject !== 'null' && rawProject !== 'undefined' && rawProject.trim() !== '')
       ? rawProject
-      : 'Compte-rendu de projet';
+      : 'Étude de projet';
 
     // --- HELPERS ---
-
     function resetX() { doc.x = M; }
 
     function rule(color = COLORS.border, thickness = 0.5) {
@@ -127,31 +144,48 @@ export async function generatePDF(data) {
       resetX();
     }
 
-    // --- EN-TÊTE : "deyoo" italique + point terracotta (signature de marque) ---
-    doc.font('Times-BoldItalic').fontSize(15).fillColor(COLORS.ink);
-    const deyooText = 'deyoo';
-    const deyooW = doc.widthOfString(deyooText);
-    const dotSize = 4;
-    const gap = 4;
-    const deyooX = M + W - deyooW - gap - dotSize;  // aligné à droite, place réservée pour le point
-    doc.text(deyooText, deyooX, M, { lineBreak: false });
-    // Point terracotta après "deyoo", aligné sur la baseline
-    const dotCenterX = deyooX + deyooW + gap + dotSize / 2;
-    const dotCenterY = M + 12;  // ajusté visuellement à la baseline du serif
-    doc.circle(dotCenterX, dotCenterY, dotSize / 2).fill(COLORS.accent);
-    doc.fillColor(COLORS.ink);
+    // Dessine le logo "deyoo" + point terracotta, avec ou sans skew italique selon la police
+    function drawLogo(x, y) {
+      const fontSize = 16;
+      doc.font(LOGO_FONT).fontSize(fontSize).fillColor(COLORS.ink);
+      const textW = doc.widthOfString('deyoo');
+      const dotSize = 4;
+      const gap = 4;
+
+      if (LOGO_USE_SKEW) {
+        // Faux italique pour Abhaya Libre (qui n'a pas de variante italic native)
+        doc.save();
+        doc.translate(x, y);
+        doc.transform(1, 0, -0.16, 1, 0, 0);
+        doc.text('deyoo', 0, 0, { lineBreak: false });
+        doc.restore();
+      } else {
+        doc.text('deyoo', x, y, { lineBreak: false });
+      }
+
+      // Point terracotta (positionné à droite du texte, sur la baseline)
+      const dotX = x + textW + gap;
+      const dotY = y + fontSize - 3;
+      doc.circle(dotX, dotY, dotSize / 2).fill(COLORS.accent);
+      doc.fillColor(COLORS.ink);
+      return { width: textW + gap + dotSize, height: fontSize };
+    }
+
+    // --- EN-TÊTE PAGE 1 : logo aligné droite, plus d'air avant le titre ---
+    doc.font(LOGO_FONT).fontSize(16);
+    const headerLogoW = doc.widthOfString('deyoo') + 8;
+    drawLogo(M + W - headerLogoW, M);
 
     resetX();
-    doc.y = M + 30;
-    doc.moveDown(2);
+    doc.y = M + 70;  // plus d'air en haut de page 1 (avant : ~30)
 
-    // --- TITRE PROJET : sérif éditorial, centré ---
+    // --- TITRE PROJET ---
     doc.font('Times-Bold').fontSize(28).fillColor(COLORS.ink)
       .text(projectName, M, doc.y, { align: 'center', width: W });
     resetX();
     doc.moveDown(0.4);
 
-    // --- DATE : italique discret ---
+    // --- DATE ---
     doc.font('Times-Italic').fontSize(10).fillColor(COLORS.mute)
       .text(
         new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }),
@@ -168,7 +202,7 @@ export async function generatePDF(data) {
       body(sections['Introduction']);
     }
 
-    // --- VERDICT (avec barre d'accent terracotta) ---
+    // --- VERDICT (barre d'accent terracotta) ---
     if (sections['Verdict']) {
       sectionTitle('Verdict');
       const vy = doc.y;
@@ -202,7 +236,6 @@ export async function generatePDF(data) {
           const parts = txt.split(/\s*[—–]\s*|\s*--\s*/);
           const amount = parts[0]?.trim() || '';
           const desc = parts.slice(1).join(' — ').trim();
-          // L3 : détecte un scénario non quantifié → encart d'invitation pour FONDATEUR uniquement
           const isEmpty = i === 2 && (NO_DATA_PATTERN.test(amount) || NO_DATA_PATTERN.test(desc));
           return { amount, desc, isEmpty };
         });
@@ -224,7 +257,6 @@ export async function generatePDF(data) {
           return size;
         }
 
-        // Calcul de la hauteur uniforme
         let maxBH = 0;
         boxData.forEach(({ amount, desc, isEmpty }) => {
           const a = isEmpty ? FONDATEUR_PROMPT.amount : amount;
@@ -242,13 +274,11 @@ export async function generatePDF(data) {
         });
         const bh = maxBH;
 
-        // Dessin des trois encadrés
         boxData.forEach(({ amount, desc, isEmpty }, i) => {
           const a = isEmpty ? FONDATEUR_PROMPT.amount : amount;
           const d = isEmpty ? FONDATEUR_PROMPT.desc : desc;
           const bx = M + i * (bw + 8);
 
-          // Fond crème doux ; bordure pointillée pour l'encart d'invitation
           doc.rect(bx, by, bw, bh).fill(COLORS.bgSoft);
           if (isEmpty) {
             doc.save();
@@ -258,11 +288,9 @@ export async function generatePDF(data) {
             doc.restore();
           }
 
-          // Label CONSERVATEUR / RÉALISTE / FONDATEUR
           doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLORS.mute)
             .text(labels[i], bx + 10, by + LABEL_Y, { width: bw - 20, characterSpacing: 1 });
 
-          // Montant (ou texte d'invitation si encart vide)
           const amtSize = fitAmtSize(a, isEmpty ? SMALL_AMT_SIZE : MAX_AMT_SIZE);
           const amtFont = isEmpty ? 'Times-Italic' : 'Helvetica-Bold';
           const amtColor = isEmpty ? COLORS.inkSoft : COLORS.ink;
@@ -270,7 +298,6 @@ export async function generatePDF(data) {
           doc.font(amtFont).fontSize(amtSize).fillColor(amtColor)
             .text(a || '', bx + 10, by + AMOUNT_Y, { width: bw - 20 });
 
-          // Description (justification du scénario, ou liste de champs à préciser)
           if (d) {
             const descY = by + AMOUNT_Y + amtH + DESC_GAP;
             doc.font('Helvetica').fontSize(8).fillColor(isEmpty ? COLORS.mute : COLORS.inkSoft)
@@ -282,9 +309,11 @@ export async function generatePDF(data) {
       }
     }
 
-    // --- LES 5 PILIERS ---
+    // --- LES 5 PILIERS (force le saut de page pour aérer la page 1) ---
     const piliers = sections['Les 5 piliers'];
     if (piliers) {
+      doc.addPage();  // Force page break avant Les 5 piliers
+      doc.y = M + 30;  // un peu d'air en haut de page 2
       sectionTitle('Les 5 piliers');
       const lines = piliers.split('\n');
 
@@ -321,7 +350,7 @@ export async function generatePDF(data) {
       });
     }
 
-    // --- CONCLUSION (italique éditorial) ---
+    // --- CONCLUSION ---
     if (sections['Conclusion']) {
       sectionTitle('Conclusion');
       resetX();
@@ -364,7 +393,7 @@ export async function generatePDF(data) {
       });
     }
 
-    // --- FOOTER : signature deyoo (L6) ---
+    // --- FOOTER : "une étude complète deyoo · deyoo.app · page X / Y" ---
     const totalPages = doc.bufferedPageRange().count;
     for (let i = 0; i < totalPages; i++) {
       doc.switchToPage(i);
@@ -372,7 +401,7 @@ export async function generatePDF(data) {
       doc.page.margins.bottom = 0;
       doc.font('Times-Italic').fontSize(8.5).fillColor(COLORS.mute)
         .text(
-          `un compte-rendu deyoo  ·  deyoo.app  ·  page ${i + 1} / ${totalPages}`,
+          `une étude complète deyoo  ·  deyoo.app  ·  page ${i + 1} / ${totalPages}`,
           M, doc.page.height - 36,
           { width: W, align: 'center', lineBreak: false }
         );
