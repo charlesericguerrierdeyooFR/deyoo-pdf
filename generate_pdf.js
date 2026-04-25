@@ -101,8 +101,8 @@ export async function generatePDF(data) {
 
     // Logo "deyoo" + point terracotta dessiné en haut à droite de chaque page
     function drawTopLogo() {
-      const fontSize = 22;
-      const dotSize = 5;
+      const fontSize = 28;
+      const dotSize = 6;
       const gap = 5;
       doc.font(LOGO_FONT).fontSize(fontSize).fillColor(COLORS.ink);
       const textW = doc.widthOfString('deyoo');
@@ -119,14 +119,17 @@ export async function generatePDF(data) {
         doc.text('deyoo', x, y, { lineBreak: false });
       }
 
-      // Point terracotta posé sur la baseline du texte
+      // Point terracotta dans l'axe du "o" (centré sur la hauteur de la minuscule, pas la baseline)
       const dotX = x + textW + gap;
-      const dotY = y + fontSize - 5;  // ajusté pour tomber sur la baseline
+      const dotY = y + fontSize - 13;  // remonté pour tomber au milieu visuel du "o"
       doc.circle(dotX, dotY, dotSize / 2).fill(COLORS.accent);
-      doc.fillColor(COLORS.ink);
 
-      // Réserve l'espace du logo : le contenu commence au moins 35px en dessous
-      doc.y = M + 40;
+      // IMPORTANT : reset complet de la police et de la couleur après le logo
+      // sinon les pages auto-créées par overflow continueraient en LOGO_FONT 28pt
+      doc.font('Times-Roman').fontSize(11).fillColor(COLORS.ink);
+
+      // Réserve l'espace du logo : le contenu commence au moins 50px en dessous
+      doc.y = M + 50;
       doc.x = M;
     }
 
@@ -154,8 +157,8 @@ export async function generatePDF(data) {
     function sectionTitle(label) {
       doc.moveDown(2);
       resetX();
-      doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.accent)
-        .text(label.toUpperCase(), M, doc.y, { characterSpacing: 1.8, width: W });
+      doc.font('Helvetica-Bold').fontSize(9.5).fillColor(COLORS.accent)
+        .text(label.toUpperCase(), M, doc.y, { characterSpacing: 2, width: W });
       doc.moveDown(0.5);
       rule();
       doc.moveDown(0.8);
@@ -320,7 +323,8 @@ export async function generatePDF(data) {
           const t = trimmed.slice(0, colonIdx).trim();
           const d = trimmed.slice(colonIdx + 3).trim();
           resetX();
-          doc.font('Times-Bold').fontSize(11.5).fillColor(COLORS.ink)
+          // Titre du pilier : taille body, juste en bold pour différencier (hiérarchie sous LES 5 PILIERS)
+          doc.font('Times-Bold').fontSize(11).fillColor(COLORS.ink)
             .text(t, M, doc.y, { width: W });
           resetX();
           doc.font('Times-Roman').fontSize(11).fillColor(COLORS.inkSoft)
@@ -365,18 +369,32 @@ export async function generatePDF(data) {
           const rest = numbered[1];
           const colonIdx = rest.indexOf(' : ');
           if (colonIdx > 0 && colonIdx < 70) {
+            // Format "1. Titre : description" — titre en bold, description en body
             const title = rest.slice(0, colonIdx).trim();
             const desc = rest.slice(colonIdx + 3).trim();
             resetX();
             doc.font('Times-Bold').fontSize(11).fillColor(COLORS.ink)
               .text(`${n}. ${clean(title)}`, M, doc.y, { width: W });
             resetX();
-            doc.font('Times-Roman').fontSize(10.5).fillColor(COLORS.inkSoft)
+            doc.font('Times-Roman').fontSize(11).fillColor(COLORS.ink)
               .text(clean(desc), M, doc.y, { lineGap: 3, width: W });
           } else {
-            resetX();
-            doc.font('Times-Bold').fontSize(11).fillColor(COLORS.ink)
-              .text(`${n}. ${clean(rest)}`, M, doc.y, { width: W });
+            // Format "1. Verbe complement..." — premier mot en bold, reste en body
+            const cleaned = clean(rest);
+            const firstSpaceIdx = cleaned.indexOf(' ');
+            if (firstSpaceIdx > 0) {
+              const firstWord = cleaned.slice(0, firstSpaceIdx);
+              const restText = cleaned.slice(firstSpaceIdx);  // garde l'espace de tête
+              resetX();
+              doc.font('Times-Bold').fontSize(11).fillColor(COLORS.ink)
+                .text(`${n}. ${firstWord}`, M, doc.y, { width: W, continued: true, lineGap: 3 });
+              doc.font('Times-Roman').fontSize(11).fillColor(COLORS.ink)
+                .text(restText, { width: W, lineGap: 3 });
+            } else {
+              resetX();
+              doc.font('Times-Bold').fontSize(11).fillColor(COLORS.ink)
+                .text(`${n}. ${cleaned}`, M, doc.y, { width: W });
+            }
           }
           doc.moveDown(0.7);
           n++;
