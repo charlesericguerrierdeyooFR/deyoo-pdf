@@ -101,8 +101,8 @@ export async function generatePDF(data) {
 
     // Logo "deyoo" + point terracotta dessiné en haut à droite de chaque page
     function drawTopLogo() {
-      const fontSize = 28;
-      const dotSize = 6;
+      const fontSize = 22;
+      const dotSize = 5;
       const gap = 5;
       doc.font(LOGO_FONT).fontSize(fontSize).fillColor(COLORS.ink);
       const textW = doc.widthOfString('deyoo');
@@ -119,17 +119,16 @@ export async function generatePDF(data) {
         doc.text('deyoo', x, y, { lineBreak: false });
       }
 
-      // Point terracotta dans l'axe du "o" (centré sur la hauteur de la minuscule, pas la baseline)
+      // Point terracotta dans l'axe du "o" — triangulation entre trop bas et trop haut
       const dotX = x + textW + gap;
-      const dotY = y + fontSize - 13;  // remonté pour tomber au milieu visuel du "o"
+      const dotY = y + fontSize - 8;  // valeur médiane entre baseline et milieu de x-height
       doc.circle(dotX, dotY, dotSize / 2).fill(COLORS.accent);
 
-      // IMPORTANT : reset complet de la police et de la couleur après le logo
-      // sinon les pages auto-créées par overflow continueraient en LOGO_FONT 28pt
+      // Reset complet de la police et de la couleur après le logo (sinon overflow casse les fonts)
       doc.font('Times-Roman').fontSize(11).fillColor(COLORS.ink);
 
-      // Réserve l'espace du logo : le contenu commence au moins 50px en dessous
-      doc.y = M + 50;
+      // Réserve l'espace du logo : le contenu commence au moins 40px en dessous
+      doc.y = M + 40;
       doc.x = M;
     }
 
@@ -155,20 +154,26 @@ export async function generatePDF(data) {
     }
 
     function sectionTitle(label) {
-      doc.moveDown(2);
+      // Anti-orphelin : si moins de ~120px disponibles avant le bas de la page,
+      // on force un saut de page pour ne pas laisser le titre seul en bas.
+      const bottomLimit = doc.page.height - doc.page.margins.bottom - 50; // marge de sécurité footer
+      if (doc.y + 120 > bottomLimit) {
+        doc.addPage();
+      }
+      doc.moveDown(2.5);
       resetX();
       doc.font('Helvetica-Bold').fontSize(9.5).fillColor(COLORS.accent)
         .text(label.toUpperCase(), M, doc.y, { characterSpacing: 2, width: W });
-      doc.moveDown(0.5);
+      doc.moveDown(0.6);
       rule();
-      doc.moveDown(0.8);
+      doc.moveDown(1.1);
       resetX();
     }
 
     function body(text, opts = {}) {
       resetX();
       doc.font('Times-Roman').fontSize(11).fillColor(COLORS.ink)
-        .text(clean(text), M, doc.y, { lineGap: 5, width: W, ...opts });
+        .text(clean(text), M, doc.y, { lineGap: 6, width: W, ...opts });
       resetX();
     }
 
@@ -328,12 +333,12 @@ export async function generatePDF(data) {
             .text(t, M, doc.y, { width: W });
           resetX();
           doc.font('Times-Roman').fontSize(11).fillColor(COLORS.inkSoft)
-            .text(clean(d), M, doc.y, { lineGap: 5, width: W });
-          doc.moveDown(1);
+            .text(clean(d), M, doc.y, { lineGap: 6, width: W });
+          doc.moveDown(1.3);
           resetX();
         } else {
           body(trimmed);
-          doc.moveDown(0.5);
+          doc.moveDown(0.7);
         }
       }
     }
@@ -344,7 +349,7 @@ export async function generatePDF(data) {
       const paras = sections['Analyse'].split(/\n{2,}/).filter(p => p.trim());
       paras.forEach((p, i) => {
         body(p);
-        if (i < paras.length - 1) doc.moveDown(0.8);
+        if (i < paras.length - 1) doc.moveDown(1.1);
       });
     }
 
@@ -396,7 +401,7 @@ export async function generatePDF(data) {
                 .text(`${n}. ${cleaned}`, M, doc.y, { width: W });
             }
           }
-          doc.moveDown(0.7);
+          doc.moveDown(1);
           n++;
         } else if (trimmed) {
           body(trimmed);
