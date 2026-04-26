@@ -410,7 +410,32 @@ export async function generatePDF(data) {
       });
     }
 
-    // --- FOOTER : "une étude complète deyoo · deyoo.app · page X / Y" ---
+    // --- NOTE MÉTHODOLOGIQUE en fin de document (sur la dernière page de contenu) ---
+    const methodNote = "Note méthodologique : les benchmarks sectoriels cités dans cette étude s'appuient sur les standards reconnus du secteur et servent de références indicatives pour situer le projet dans son écosystème. Ils méritent une validation terrain spécifique avant toute décision d'investissement.";
+
+    // Vérifie qu'il reste au moins 80px avant le footer ; sinon saut de page
+    const noteSpaceNeeded = 80;
+    if (doc.y + noteSpaceNeeded > doc.page.height - doc.page.margins.bottom - 50) {
+      doc.addPage();
+    } else {
+      doc.moveDown(2.5);
+    }
+    resetX();
+
+    // Petit filet discret centré, plus court que la largeur totale
+    const filetWidth = W * 0.5;
+    const filetX = M + (W - filetWidth) / 2;
+    doc.moveTo(filetX, doc.y).lineTo(filetX + filetWidth, doc.y)
+      .lineWidth(0.5).stroke(COLORS.border);
+    doc.moveDown(0.6);
+    resetX();
+
+    // Note méthodologique en italique discret
+    doc.font('Times-Italic').fontSize(8).fillColor(COLORS.mute)
+      .text(methodNote, M, doc.y, { width: W, align: 'center', lineGap: 2 });
+    resetX();
+
+    // --- FOOTER : "une étude deyoo · deyoo.app · page X / Y" ---
     const totalPages = doc.bufferedPageRange().count;
     for (let i = 0; i < totalPages; i++) {
       doc.switchToPage(i);
