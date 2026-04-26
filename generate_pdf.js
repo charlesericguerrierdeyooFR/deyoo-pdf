@@ -3,7 +3,6 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync } from 'fs';
 
-// Palette deyoo — couleurs utilisées en accents (pas de fond pleine page pour préserver l'encre en print)
 const COLORS = {
   paper:      '#FFFFFF',
   bgSoft:     '#EDE7D7',
@@ -15,12 +14,8 @@ const COLORS = {
   border:     '#B8A98A',
 };
 
-const NO_DATA_PATTERN = /(non\s+(calculable|quantifié|évaluable|projeter)|données?\s+insuffisantes?|impossible\s+à\s+(calculer|projeter|évaluer)|nécessite\s+étude\s+de\s+marché|pas\s+(suffisamment|assez)\s+de\s+données)/i;
-
-const FONDATEUR_PROMPT = {
-  amount: 'À préciser',
-  desc:   'indiquer prix moyen, volume cible mensuel, marge brute estimée et coûts fixes pour calculer ce scénario.',
-};
+// Les 3 scénarios sont TOUJOURS chiffrés par le modèle (CONSERVATEUR / RÉALISTE / AMBITIEUX
+// calculés sur ratios bas / médians / hauts du secteur). Pas de placeholder conditionnel.
 
 const SECTION_MAP = {
   'INTRODUCTION':            'Introduction',
@@ -197,15 +192,13 @@ export async function generatePDF(data) {
       resetX();
     }
 
+    // 3 boxes uniformes : CONSERVATEUR / RÉALISTE / AMBITIEUX
     const vk = sections['Variable cle et seuils'] || sections['Variable cle'] || sections['Variable clé et seuils'] || sections['Variable clé'];
     if (vk) {
       sectionTitle('Variable cle et seuils');
       const vkLines = vk.split('\n');
 
-      const SEUIL_LABELS = ['CONSERVATEUR', 'RÉALISTE', 'REALISTE', 'FONDATEUR'];
-      // Une ligne valide de scénario doit : (1) commencer par le label dans les 30 premiers chars,
-      // (2) être de longueur raisonnable (< 280 chars). Sinon, c'est probablement l'intro mergée
-      // avec le label par erreur de Claude — on la traite comme intro.
+      const SEUIL_LABELS = ['CONSERVATEUR', 'RÉALISTE', 'REALISTE', 'AMBITIEUX', 'FONDATEUR'];
       const isValidScenarioLine = (line) => {
         const trimmed = line.trim();
         if (!trimmed) return false;
@@ -226,21 +219,19 @@ export async function generatePDF(data) {
       if (seuilLines.length) {
         const bw = (W - 16) / 3;
         const by = doc.y;
-        const labels = ['CONSERVATEUR', 'RÉALISTE', 'FONDATEUR'];
+        const labels = ['CONSERVATEUR', 'RÉALISTE', 'AMBITIEUX'];
 
-        const boxData = seuilLines.slice(0, 3).map((line, i) => {
+        const boxData = seuilLines.slice(0, 3).map((line) => {
           const txt = clean(line.replace(/^[A-ZÉÀ]+\s*[:=]\s*/i, ''));
           const parts = txt.split(/\s*[—–]\s*|\s*--\s*/);
           const amount = parts[0]?.trim() || '';
           const desc = parts.slice(1).join(' — ').trim();
-          const isEmpty = i === 2 && (NO_DATA_PATTERN.test(amount) || NO_DATA_PATTERN.test(desc));
-          return { amount, desc, isEmpty };
+          return { amount, desc };
         });
 
         const LABEL_Y = 12;
         const AMOUNT_Y = 30;
         const MAX_AMT_SIZE = 13;
-        const SMALL_AMT_SIZE = 11;
         const DESC_GAP = 8;
         const BOT_PAD = 16;
 
@@ -255,50 +246,36 @@ export async function generatePDF(data) {
         }
 
         let maxBH = 0;
-        boxData.forEach(({ amount, desc, isEmpty }) => {
-          const a = isEmpty ? FONDATEUR_PROMPT.amount : amount;
-          const d = isEmpty ? FONDATEUR_PROMPT.desc : desc;
-          const amtSize = fitAmtSize(a, isEmpty ? SMALL_AMT_SIZE : MAX_AMT_SIZE);
-          const amtFont = isEmpty ? 'Times-Italic' : 'Helvetica-Bold';
+        boxData.forEach(({ amount, desc }) => {
+          const amtSize = fitAmtSize(amount);
           let h = AMOUNT_Y;
-          h += doc.font(amtFont).fontSize(amtSize).heightOfString(a || ' ', { width: bw - 20 });
-          if (d) {
+          h += doc.font('Helvetica-Bold').fontSize(amtSize).heightOfString(amount || ' ', { width: bw - 20 });
+          if (desc) {
             h += DESC_GAP;
-            h += doc.font('Helvetica').fontSize(8).heightOfString(d, { width: bw - 20 });
+            h += doc.font('Helvetica').fontSize(8).heightOfString(desc, { width: bw - 20 });
           }
           h += BOT_PAD;
           if (h > maxBH) maxBH = h;
         });
         const bh = maxBH;
 
-        boxData.forEach(({ amount, desc, isEmpty }, i) => {
-          const a = isEmpty ? FONDATEUR_PROMPT.amount : amount;
-          const d = isEmpty ? FONDATEUR_PROMPT.desc : desc;
+        boxData.forEach(({ amount, desc }, i) => {
           const bx = M + i * (bw + 8);
 
           doc.rect(bx, by, bw, bh).fill(COLORS.bgSoft);
-          if (isEmpty) {
-            doc.save();
-            doc.lineWidth(0.8).dash(3, { space: 3 });
-            doc.rect(bx + 0.5, by + 0.5, bw - 1, bh - 1).stroke(COLORS.border);
-            doc.undash();
-            doc.restore();
-          }
 
           doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLORS.mute)
             .text(labels[i], bx + 10, by + LABEL_Y, { width: bw - 20, characterSpacing: 1 });
 
-          const amtSize = fitAmtSize(a, isEmpty ? SMALL_AMT_SIZE : MAX_AMT_SIZE);
-          const amtFont = isEmpty ? 'Times-Italic' : 'Helvetica-Bold';
-          const amtColor = isEmpty ? COLORS.inkSoft : COLORS.ink;
-          const amtH = doc.font(amtFont).fontSize(amtSize).heightOfString(a || ' ', { width: bw - 20 });
-          doc.font(amtFont).fontSize(amtSize).fillColor(amtColor)
-            .text(a || '', bx + 10, by + AMOUNT_Y, { width: bw - 20 });
+          const amtSize = fitAmtSize(amount);
+          const amtH = doc.font('Helvetica-Bold').fontSize(amtSize).heightOfString(amount || ' ', { width: bw - 20 });
+          doc.font('Helvetica-Bold').fontSize(amtSize).fillColor(COLORS.ink)
+            .text(amount || '', bx + 10, by + AMOUNT_Y, { width: bw - 20 });
 
-          if (d) {
+          if (desc) {
             const descY = by + AMOUNT_Y + amtH + DESC_GAP;
-            doc.font('Helvetica').fontSize(8).fillColor(isEmpty ? COLORS.mute : COLORS.inkSoft)
-              .text(d, bx + 10, descY, { width: bw - 20 });
+            doc.font('Helvetica').fontSize(8).fillColor(COLORS.inkSoft)
+              .text(desc, bx + 10, descY, { width: bw - 20 });
           }
         });
         doc.y = by + bh + 20;
