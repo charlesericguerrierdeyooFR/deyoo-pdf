@@ -315,10 +315,14 @@ export async function generatePDF(data) {
       }
     }
 
-    // --- LES 5 PILIERS (force le saut de page pour aérer la page 1) ---
+    // --- LES 5 PILIERS ---
+    // FIX 2026-05-21 : plus de saut de page forcé. L'ancien doc.addPage() inconditionnel
+    // rejetait "Les 5 piliers" en page suivante même quand les 3 boxes scénarios venaient
+    // juste de basculer en page 2 → page 2 à ~80% vide (bug "Camion" de Diana, 20/05).
+    // On laisse sectionTitle() gérer l'anti-orphelin (saut uniquement s'il reste <120px avant
+    // le footer), ce qui enchaîne "Les 5 piliers" juste après les boxes quand la place le permet.
     const piliers = sections['Les 5 piliers'];
     if (piliers) {
-      doc.addPage();  // Force page break avant Les 5 piliers ; drawTopLogo positionne doc.y = M+40
       sectionTitle('Les 5 piliers');
       const lines = piliers.split('\n');
 
@@ -416,9 +420,13 @@ export async function generatePDF(data) {
     // --- NOTE MÉTHODOLOGIQUE en fin de document (sur la dernière page de contenu) ---
     const methodNote = "Note méthodologique : les benchmarks sectoriels cités dans cette étude s'appuient sur les standards reconnus du secteur et servent de références indicatives pour situer le projet dans son écosystème. Ils méritent une validation terrain spécifique avant toute décision d'investissement.";
 
-    // Vérifie qu'il reste au moins 80px avant le footer ; sinon saut de page
-    const noteSpaceNeeded = 80;
-    if (doc.y + noteSpaceNeeded > doc.page.height - doc.page.margins.bottom - 50) {
+    // FIX 2026-05-21 : on ne saute de page que si la note (filet + texte) ne tient
+    // réellement pas au-dessus du footer. L'ancien seuil fixe (80+50px réservés) était
+    // trop conservateur et orphelinait la note sur une dernière page quasi-vide.
+    const footerTop = doc.page.height - 50;  // le footer est dessiné à height-36
+    const noteH = doc.font('Times-Italic').fontSize(8).heightOfString(methodNote, { width: W, lineGap: 2 });
+    const noteBlock = 16 + noteH;            // filet + petits espacements + texte
+    if (doc.y + 30 + noteBlock > footerTop) {
       doc.addPage();
     } else {
       doc.moveDown(2.5);
